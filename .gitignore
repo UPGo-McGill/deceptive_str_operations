@@ -27,3 +27,4 @@ vignettes/*.pdf
 # R Environment Variables
 .Renviron
 deceptive_str_operations.Rproj
+data
