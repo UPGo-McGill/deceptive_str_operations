@@ -28,3 +28,5 @@ vignettes/*.pdf
 .Renviron
 deceptive_str_operations.Rproj
 data
+dict
+output
