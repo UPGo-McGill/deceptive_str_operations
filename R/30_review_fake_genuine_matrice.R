@@ -1,11 +1,16 @@
 source("R/01_source.R")
-library(lubridate)
+library(caret)
 
 load("data/review_processed.Rdata")
 load("data/str_processed.Rdata")
 
 
 # Matrix creation --------------------------------------------------------
+
+# # Filter out if not enough words for reliable analysis
+review_text_more_words <-
+review_text %>%
+  filter(lengths(str_split(review, " ")) > 4)
 
 # Keeping only the more recent version of review_user
 review_user_fk <- 
@@ -33,8 +38,7 @@ matrice <-
   mutate(user_ID = ifelse(!is.na(old_host) & user_ID == old_host, host_ID, user_ID), # if user_ID = old_host, take host_ID
          property_created = str_extract(property_created, "^.{7}"),
          review_date = str_extract(review_date, "^.{7}"),
-         member_since = str_extract(member_since, "^.{7}")) # I'll have to make a range of 2 months for the case when a property is 
-                                                          # created at the end of a month
+         member_since = str_extract(member_since, "^.{7}"))
 
 
 # Potential fake reviews regrading user behavior  -------------------------
@@ -55,10 +59,10 @@ multiple_reviews_same_host <-
 
 # a user/network letting the same reviews at multiple places
 same_review <- ### Maybe excluding one-word or two-words review a good idea?
-  review_text %>% 
+  review_text_more_words %>% 
   count(user_ID, review, sort=T) %>% 
   filter(n>1) %>% 
-  inner_join(review_text, by = c("user_ID", "review")) %>% 
+  inner_join(review_text_more_words, by = c("user_ID", "review")) %>% 
   pull(review_ID)
 
 # identifying which are the potential fake reviews vs genuine
@@ -74,7 +78,7 @@ fake_reviews <-
          ))
 
 fake_reviews <- 
-  review_text %>% 
+  review_text_more_words %>% 
   filter(review_ID %in% !! (fake_reviews %>% filter(fake == T) %>% pull(review_ID))) %>% 
   select(review_ID, review) %>% 
   mutate(fake = T)
@@ -95,10 +99,10 @@ one_review_per_host <-
   pull(review_ID)
 
 unique_review <- 
-  review_text %>% 
+  review_text_more_words %>% 
   count(user_ID, review, sort=T) %>% 
   filter(n == 1) %>% 
-  inner_join(review_text, by = c("user_ID", "review")) %>% 
+  inner_join(review_text_more_words, by = c("user_ID", "review")) %>% 
   pull(review_ID)
 
 genuine_reviews <- 
@@ -115,14 +119,14 @@ genuine_reviews <-
          ))
 
 genuine_reviews <- 
-  review_text %>% 
+  review_text_more_words %>% 
   filter(review_ID %in% !! (genuine_reviews %>% filter(genuine == T) %>% pull(review_ID))) %>% 
   select(review_ID, review) %>% 
   mutate(fake = F)
 
 
 
-# Applying a statistical model --------------------------------------------
+# Prepare a statistical model --------------------------------------------
 
 # Both fake and genuine text reviews in one dataframe
 classified_texts <-
@@ -144,8 +148,10 @@ classified_texts <-
 # done directly in the LIWC2015 software
  # Send every review to the software
 
-write_csv(select(review_text, review_ID, review), file = "data/review_text.csv")
+# Export all reviews
+write_csv(select(review_text_more_words, review_ID, review), file = "data/review_text_more_words.csv")
 
+# Import LIWC results
 liwc_results <- 
   (read.csv("output/liwc2015_results.csv", dec = ",") %>% 
      as_tibble() %>% 
@@ -153,11 +159,12 @@ liwc_results <-
             review = B))[-1,] %>% 
   mutate(review_ID = as.numeric(review_ID))
   
-# Quickly see which variables vary if a review is fake or genuine
+# LIWC results for classified (fake vs genuine) texts
 classified_texts <- 
 liwc_results %>% 
-  inner_join(select(classify_texts, review_ID, fake), by = "review_ID")
+  inner_join(select(classified_texts, review_ID, fake), by = "review_ID")
 
+# Quickly see which variables vary the most when a review is fake vs genuine
 classified_texts_diff <- 
   classified_texts %>% 
   group_by(fake) %>% 
@@ -166,7 +173,7 @@ classified_texts_diff <-
   select(-c(review_ID, review, fake))
 
 (classified_texts_diff %>% 
-  add_row(classified_texts_diff[1,] - liwc_results_diff[2,]))[3,] %>% 
+  add_row(classified_texts_diff[1,] - classified_texts_diff[2,]))[3,] %>% 
   pivot_longer(cols = everything(), names_to = "name", values_to = "value") %>% 
   filter(value != 0) %>% 
   mutate(value = abs(value)) %>% 
@@ -174,7 +181,39 @@ classified_texts_diff <-
   pull(name) %>% paste(collapse = " + ")
   
 
-  
+# Model testing -----------------------------------------------------------
+
+# Split the data into training and test set
+training_samples <-
+  classified_texts$fake %>%
+  createDataPartition(p = 0.8, list = FALSE)
+
+train_data <- classified_texts[training_samples, ]
+test_data <- classified_texts[-training_samples, ]
+
+# Fit the model
+model <- glm(fake ~ Clout + function. + posemo + Analytic +
+               adj + Exclam + relativ + achieve + work + AllPunc +
+               focuspast + time + reward + drives + 
+               social + we + focuspresent + auxverb,
+             data = classified_texts, family = binomial)
+
+summary(model)
+
+# Test model
+probabilities <- model %>% predict(test_data, type = "response")
+predicted_classes <- ifelse(probabilities > 0.5, "TRUE", "FALSE")
+mean(predicted_classes == test_data$fake)
+# Outcome: 0.66. Pretty bad at the moment!
+
+# Apply it to all reviews
+liwc_results %>% 
+  modelr::add_predictions(model, type = "response") %>%
+  as_tibble() %>% 
+  select(review_ID, review, pred) %>% View
+
+
+# Fit the model -----------------------------------------------------------
 
 # Fit the model 
 model <- glm(fake ~ Clout + Authentic + function. + posemo + affect + Analytic +
@@ -185,35 +224,3 @@ model <- glm(fake ~ Clout + Authentic + function. + posemo + affect + Analytic +
 
 summary(model)
 
-# Apply it to all reviews
-liwc_results %>% 
-  modelr::add_predictions(model, type = "response") %>%
-  as_tibble() %>% 
-  select(review_ID, review, pred) %>% View
-
-
-liwc_results_all %>% select(review_ID, pred) %>%
-  inner_join(classify_texts) %>%
-  ggplot()+
-  geom_density(aes(pred, color = fake))
-
-
-# # Model testing -----------------------------------------------------------
-# 
-# # Split the data into training and test set
-# training_samples_12 <-
-#   first_year$FREH %>%
-#   createDataPartition(p = 0.80, list = FALSE)
-# 
-# train_data_12 <- first_year[training_samples_12, ]
-# test_data_12 <- first_year[-training_samples_12, ]
-# 
-# # Fit the model
-# model_12_test <- glm(FREH ~ cum_R + cum_AR + month_since_created + month,
-#                   data = train_data_12, family = binomial)
-# 
-# # Test model
-# probabilities_12 <- model_12_test %>% predict(test_data_12, type = "response")
-# predicted_classes_12 <- ifelse(probabilities_12 > 0.5, "TRUE", "FALSE")
-# mean(predicted_classes_12 == test_data_12$FREH)
-# # Outcome: 0.864
