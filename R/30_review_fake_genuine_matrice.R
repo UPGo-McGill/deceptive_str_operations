@@ -91,7 +91,7 @@ one_review_per_host <-
   matrice %>% 
   count(user_ID, host_ID, sort = T) %>% 
   filter(n == 1) %>%
-  inner_join(fake_reviews, by = c("user_ID", "host_ID")) %>% 
+  inner_join(matrice, by = c("user_ID", "host_ID")) %>% 
   pull(review_ID)
 
 unique_review <- 
@@ -112,7 +112,7 @@ genuine_reviews <-
              review_ID %in% one_review_per_host  &
              review_ID %in% unique_review ~ T,
            F == F ~ F
-         )) # add if booked only one day
+         ))
 
 genuine_reviews <- 
   review_text %>% 
@@ -121,52 +121,99 @@ genuine_reviews <-
   mutate(fake = F)
 
 
-# Dataframe with "known" fake and genuine reviews -------------------------
-# 
-# classify_texts <- 
-#   rbind(fake_reviews, genuine_reviews)
-# 
-# # Random dictionary, not the LIWC which I'll use later:
+
+# Applying a statistical model --------------------------------------------
+
+# Both fake and genuine text reviews in one dataframe
+classified_texts <-
+  rbind(fake_reviews, sample_n(genuine_reviews, nrow(fake_reviews)))
+
+# # Try at using the LIWC dictionary in R directly
 # 
 # # devtools::install_github("kbenoit/quanteda.dictionaries")
 # library(quanteda.dictionaries)
 # 
-# liwc_results <- 
-# liwcalike(classify_texts$review, dictionary = data_dictionary_NRC) %>% 
+# dict_liwc_2015 <- dictionary(file = "dict/LIWC2015_English_Flat.dic",
+#                              format = "LIWC")
+# 
+# liwc_results <-
+#   liwcalike(classify_texts$review, dictionary = "dict_liwc_2015") #%>%
 #   mutate(docname = classify_texts$review_ID)
+
+# Since the latter is not working, probably deprecated, the text analysis is
+# done directly in the LIWC2015 software
+ # Send every review to the software
+
+write_csv(select(review_text, review_ID, review), file = "data/review_text.csv")
+
+liwc_results <- 
+  (read.csv("output/liwc2015_results.csv", dec = ",") %>% 
+     as_tibble() %>% 
+     rename(review_ID = A,
+            review = B))[-1,] %>% 
+  mutate(review_ID = as.numeric(review_ID))
+  
+# Quickly see which variables vary if a review is fake or genuine
+classified_texts <- 
+liwc_results %>% 
+  inner_join(select(classify_texts, review_ID, fake), by = "review_ID")
+
+classified_texts_diff <- 
+  classified_texts %>% 
+  group_by(fake) %>% 
+  summarize(across(cols = everything(), .fns = mean, na.rm = T)) %>%
+  ungroup() %>% 
+  select(-c(review_ID, review, fake))
+
+(classified_texts_diff %>% 
+  add_row(classified_texts_diff[1,] - liwc_results_diff[2,]))[3,] %>% 
+  pivot_longer(cols = everything(), names_to = "name", values_to = "value") %>% 
+  filter(value != 0) %>% 
+  mutate(value = abs(value)) %>% 
+  arrange(desc(value)) %>% 
+  pull(name) %>% paste(collapse = " + ")
+  
+
+  
+
+# Fit the model 
+model <- glm(fake ~ Clout + Authentic + function. + posemo + affect + Analytic +
+               adj + Exclam + relativ + WPS + achieve + work + prep + AllPunc +
+               focuspast + affiliation + time + reward + drives + Tone + 
+               social + article + we + focuspresent + auxverb,
+             data = classified_texts, family = binomial)
+
+summary(model)
+
+# Apply it to all reviews
+liwc_results %>% 
+  modelr::add_predictions(model, type = "response") %>%
+  as_tibble() %>% 
+  select(review_ID, review, pred) %>% View
+
+
+liwc_results_all %>% select(review_ID, pred) %>%
+  inner_join(classify_texts) %>%
+  ggplot()+
+  geom_density(aes(pred, color = fake))
+
+
+# # Model testing -----------------------------------------------------------
 # 
-# head(liwc_results)
+# # Split the data into training and test set
+# training_samples_12 <-
+#   first_year$FREH %>%
+#   createDataPartition(p = 0.80, list = FALSE)
 # 
-# liwc_results <- 
-#   liwc_results %>% 
-#   select(review_ID = docname, WPS, WC, Sixltr, anger, anticipation, disgust, 
-#          fear, joy, negative, positive, sadness, surprise, trust, AllPunc, 
-#          Exclam) %>% 
-#   as_tibble() %>% 
-#   left_join(select(classify_texts, -review), by = "review_ID")
+# train_data_12 <- first_year[training_samples_12, ]
+# test_data_12 <- first_year[-training_samples_12, ]
 # 
-# model <- glm(fake ~ WPS + WC + Sixltr + anger + anticipation + disgust + fear + joy + 
-#                negative + positive + sadness + surprise + trust + AllPunc + Exclam, 
-#              data = liwc_results, family = binomial)
+# # Fit the model
+# model_12_test <- glm(FREH ~ cum_R + cum_AR + month_since_created + month,
+#                   data = train_data_12, family = binomial)
 # 
-# summary(model)
-# 
-# # apply it to all my population
-# 
-# liwc_results_all <- 
-#   liwcalike(review_text$review, dictionary = data_dictionary_NRC) %>% 
-#   mutate(docname = review_text$review_ID)
-# 
-# liwc_results_all <- 
-#   liwc_results_all %>% 
-#   select(review_ID = docname, WPS, WC, Sixltr, anger, anticipation, disgust, 
-#          fear, joy, negative, positive, sadness, surprise, trust, AllPunc, 
-#          Exclam) %>% 
-#   modelr::add_predictions(model, type = "response") %>% 
-#   as_tibble()
-# 
-# 
-# liwc_results_all %>% select(review_ID, pred) %>% 
-#   inner_join(classify_texts) %>% 
-#   filter(fake == T) %>% summarize(mean(pred))
-# 
+# # Test model
+# probabilities_12 <- model_12_test %>% predict(test_data_12, type = "response")
+# predicted_classes_12 <- ifelse(probabilities_12 > 0.5, "TRUE", "FALSE")
+# mean(predicted_classes_12 == test_data_12$FREH)
+# # Outcome: 0.864
