@@ -157,7 +157,8 @@ liwc_results <-
      as_tibble() %>% 
      rename(review_ID = A,
             review = B))[-1,] %>% 
-  mutate(review_ID = as.numeric(review_ID))
+  mutate(review_ID = as.numeric(review_ID)) %>% 
+  filter(review_ID %in% review_text_more_words$review_ID)
   
 # LIWC results for classified (fake vs genuine) texts
 classified_texts <- 
@@ -177,8 +178,7 @@ classified_texts_diff <-
   pivot_longer(cols = everything(), names_to = "name", values_to = "value") %>% 
   filter(value != 0) %>% 
   mutate(value = abs(value)) %>% 
-  arrange(desc(value)) %>% 
-  pull(name) %>% paste(collapse = " + ")
+  arrange(desc(value)) %>% View
   
 
 # Model testing -----------------------------------------------------------
@@ -192,35 +192,29 @@ train_data <- classified_texts[training_samples, ]
 test_data <- classified_texts[-training_samples, ]
 
 # Fit the model
-model <- glm(fake ~ Clout + function. + posemo + Analytic +
-               adj + Exclam + relativ + achieve + work + AllPunc +
-               focuspast + time + reward + drives + 
-               social + we + focuspresent + auxverb,
+model <- glm(fake ~ Authentic + Analytic + function. + Tone +
+               affect + 
+               adj +
+               ppron + i + we + shehe + they +
+               time + focuspast + focuspresent + focusfuture +
+               space + relativ +
+               work + leisure + home,
              data = classified_texts, family = binomial)
 
-summary(model)
+# summary(model)
 
 # Test model
 probabilities <- model %>% predict(test_data, type = "response")
 predicted_classes <- ifelse(probabilities > 0.5, "TRUE", "FALSE")
 mean(predicted_classes == test_data$fake)
-# Outcome: 0.66. Pretty bad at the moment!
+# Outcome: 0.66. Pretty bad at the moment.
+
 
 # Apply it to all reviews
-liwc_results %>% 
+classified_texts %>% 
   modelr::add_predictions(model, type = "response") %>%
   as_tibble() %>% 
-  select(review_ID, review, pred) %>% View
+  select(review_ID, review, pred, fake) %>% View
 
 
 # Fit the model -----------------------------------------------------------
-
-# Fit the model 
-model <- glm(fake ~ Clout + Authentic + function. + posemo + affect + Analytic +
-               adj + Exclam + relativ + WPS + achieve + work + prep + AllPunc +
-               focuspast + affiliation + time + reward + drives + Tone + 
-               social + article + we + focuspresent + auxverb,
-             data = classified_texts, family = binomial)
-
-summary(model)
-
