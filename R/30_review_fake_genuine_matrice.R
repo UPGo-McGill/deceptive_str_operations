@@ -130,8 +130,8 @@ genuine_reviews <-
 
 # Both fake and genuine text reviews in one dataframe
 classified_texts <-
-  rbind(fake_reviews, genuine_reviews) # My issue here is that I have way more
-                                       # "genuine" than "fake" reviews
+  rbind(fake_reviews, sample_n(genuine_reviews, nrow(fake_reviews))) # My issue here is that I have way more
+                                                                     # "genuine" than "fake" reviews
 
 # # Try at using the LIWC dictionary in R directly
 # 
@@ -150,7 +150,7 @@ classified_texts <-
  # Send every review to the software
 
 # Export all reviews
-write_csv(select(review_text_more_words, review_ID, review), file = "data/review_text_more_words.csv")
+write_csv(select(review_text_more_words, review_ID, review), file = "data/review_texts.csv")
 
 # Import LIWC results
 liwc_results <- 
@@ -179,7 +179,8 @@ classified_texts_diff <-
   pivot_longer(cols = everything(), names_to = "name", values_to = "value") %>% 
   filter(value != 0) %>% 
   mutate(value = abs(value)) %>% 
-  arrange(desc(value)) %>% View
+  arrange(value) %>% 
+  print(n = 100)
   
 
 # Model testing -----------------------------------------------------------
@@ -193,19 +194,21 @@ train_data <- classified_texts[training_samples, ]
 test_data <- classified_texts[-training_samples, ]
 
 # Fit the model
-model <- glm(fake ~ Authentic + Analytic + function. + Tone +
-               affect + 
-               adj +
-               ppron + i + we + shehe + they +
-               time + focuspast + focuspresent + focusfuture +
-               space + relativ +
-               work + leisure + home,
-             data = classified_texts, family = binomial)
+model_testing <- glm(fake ~ WPS + Authentic + Analytic +  Tone + Exclam + #  Linguistic processes
+                       function. + ppron + i + we + shehe + they + adj + # Function words
+                       affect + posemo + negemo + # Psychological processes - emotional
+                       social + family + friend + female + male + # Psychological processes - social
+                       cogproc + insight + cause + discrep + tentat + certain + differ + # Psychological processes - cognitive
+                       time + focuspast + focuspresent + focusfuture + space + relativ + # Psychological processes - time and space
+                       percept + see + hear + feel + # Psychological processes - perceptual
+                       bio + body + health + sexual + ingest + # Psychological processes - biological
+                       work + leisure + home + money + relig, # Personal concerns
+                     data = train_data, family = binomial)
 
 # summary(model)
 
 # Test model
-probabilities <- model %>% predict(test_data, type = "response")
+probabilities <- model_testing %>% predict(test_data, type = "response")
 predicted_classes <- ifelse(probabilities > 0.5, TRUE, FALSE)
 mean(predicted_classes == test_data$fake)
 # Outcome: 0.97,  because my sample size for fake review is too small 
@@ -217,11 +220,35 @@ mean(predicted_classes == test_data$fake)
 # intentionally shrink my "genuine" sample size, if I don't know the real 
 # proportion of "fake" vs "genuine" reviews? If I shrink my genuine sample size
 # to the same number of observations than the sample I have of fake reviews, then
-# I come down to an outcome of 0.66% and the model vastly overestimates the 
-# number of fake reviews. 
+# I come down to an outcome of 0.67%, and the model probably overestimates the 
+# number of fake reviews if applied to the entire population.
+
+# Outcome per category (fake vs genuine)
+tibble(fake = test_data$fake, predicted_class = predicted_classes) %>% 
+  mutate(accurate = ifelse(fake == predicted_class, T, F)) %>% 
+  group_by(fake) %>% 
+  summarize(outcome = mean(accurate))
+
+# When the full sample of genuine review is counted, the model is virtually never
+# wrong for genuine review, but is virtually all the time wrong for fake reviews.
+
+# If I downsize the size of the sample of the genuine reviews for the same size
+# of the sample of fake reviews, then the model is right 70% of the time for 
+# genuine review, and right 65% of the time for fake review.
 
 
-# Apply model -------------------------------------------------------------
+# Fit and apply model for all data ----------------------------------------
+
+model <- glm(fake ~ WPS + Authentic + Analytic +  Tone + Exclam + #  Linguistic processes
+               function. + ppron + i + we + shehe + they + adj + # Function words
+               affect + posemo + negemo + # Psychological processes - emotional
+               social + family + friend + female + male + # Psychological processes - social
+               cogproc + insight + cause + discrep + tentat + certain + differ + # Psychological processes - cognitive
+               time + focuspast + focuspresent + focusfuture + space + relativ + # Psychological processes - time and space
+               percept + see + hear + feel + # Psychological processes - perceptual
+               bio + body + health + sexual + ingest + # Psychological processes - biological
+               work + leisure + home + money + relig, # Personal concerns
+             data = classified_texts, family = binomial)
 
 liwc_results %>% 
   modelr::add_predictions(model, type = "response") %>%
@@ -229,3 +256,9 @@ liwc_results %>%
   select(review_ID, review, pred) %>%
   mutate(predicted_fake = ifelse(pred > 0.5, TRUE, FALSE)) %>% 
   count(predicted_fake)
+# The model predicts that a third of the review population are fake. Unlikely!
+
+
+# Bigram analysis ---------------------------------------------------------
+
+# Start by striping white spaces, removing stopwords and punctuation.
