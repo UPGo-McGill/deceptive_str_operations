@@ -130,7 +130,8 @@ genuine_reviews <-
 
 # Both fake and genuine text reviews in one dataframe
 classified_texts <-
-  rbind(fake_reviews, sample_n(genuine_reviews, nrow(fake_reviews)))
+  rbind(fake_reviews, genuine_reviews) # My issue here is that I have way more
+                                       # "genuine" than "fake" reviews
 
 # # Try at using the LIWC dictionary in R directly
 # 
@@ -205,16 +206,26 @@ model <- glm(fake ~ Authentic + Analytic + function. + Tone +
 
 # Test model
 probabilities <- model %>% predict(test_data, type = "response")
-predicted_classes <- ifelse(probabilities > 0.5, "TRUE", "FALSE")
+predicted_classes <- ifelse(probabilities > 0.5, TRUE, FALSE)
 mean(predicted_classes == test_data$fake)
-# Outcome: 0.66. Pretty bad at the moment.
+# Outcome: 0.97,  because my sample size for fake review is too small 
+# compared to the sample size of genuine reviews. Virtually every review in the
+# test_data are predicted to be genuine, and since the vast majority of reviews in 
+# my sample are genuine, then the outcome of the model is very high: it is only 
+# wrong in the case where a review was fake in the sample, but is predicted
+# as genuine by the model like every other review. But how much is it okay to 
+# intentionally shrink my "genuine" sample size, if I don't know the real 
+# proportion of "fake" vs "genuine" reviews? If I shrink my genuine sample size
+# to the same number of observations than the sample I have of fake reviews, then
+# I come down to an outcome of 0.66% and the model vastly overestimates the 
+# number of fake reviews. 
 
 
-# Apply it to all reviews
-classified_texts %>% 
+# Apply model -------------------------------------------------------------
+
+liwc_results %>% 
   modelr::add_predictions(model, type = "response") %>%
   as_tibble() %>% 
-  select(review_ID, review, pred, fake) %>% View
-
-
-# Fit the model -----------------------------------------------------------
+  select(review_ID, review, pred) %>%
+  mutate(predicted_fake = ifelse(pred > 0.5, TRUE, FALSE)) %>% 
+  count(predicted_fake)
