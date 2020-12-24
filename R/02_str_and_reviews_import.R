@@ -49,6 +49,6 @@ review_user <-
 upgo_disconnect()
 
 qsavem(property, daily, host, file = "data/str_raw.qsm",
-       nthreads = availableCores())
+       nthreads = parallel::detectCores()-1)
 qsavem(review, review_text, review_user, file = "data/review.qsm",
-       nthreads = availableCores())
+       nthreads = parallel::detectCores()-1)
