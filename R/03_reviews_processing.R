@@ -1,7 +1,7 @@
 
 # Load libraries and data -------------------------------------------------
 source("R/01_source.R")
-library(googleLanguageR)
+# library(googleLanguageR)
 
 load("data/review.Rdata")
 
@@ -118,6 +118,14 @@ review_text <-
   filter(lang == "en") %>% 
   select(-lang)
 
+
+# All review texts to lowercase --------------------------------------------
+
+review_text <- 
+review_text %>% 
+  mutate(review = str_to_lower(review))
+
+
 # Exclusion of automated reviews ------------------------------------------
 
 review_text <-
@@ -129,12 +137,13 @@ review <-
   filter(review_ID %in% review_text$review_ID)
 
 
-# All review texts to lowercase --------------------------------------------
+# Filter out if not enough words for reliable analysis --------------------
 
-review_text <- 
-review_text %>% 
-  mutate(review = str_to_lower(review))
+review_text <-
+  review_text %>%
+  filter(lengths(str_split(review, " ")) > 4)
+
 
 # Save every reviews in English -------------------------------------------
 
-save(review, review_text, review_user, file = "data/review_processed.Rdata")
+save(review, review_text, review_user, file = "output/review_processed.Rdata")
