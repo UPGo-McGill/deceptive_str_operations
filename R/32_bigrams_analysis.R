@@ -43,15 +43,19 @@ load("output/classified_texts.Rdata")
 #                      colors = RColorBrewer::brewer.pal(3, "Set1")[factor(word_cloud$fake)])
 
 
+
+
+
+
 # Quanteda - bigrams analysis ---------------------------------------------
 
-# Error: protect(): protection stack overflow when running the model! So decrease size
+# decreased size needed due to lack of computational power
 classified_texts <- sample_n(classified_texts, size = nrow(classified_texts)/14)
 
 
 # Quanteda - bigrams creation ---------------------------------------------
 
-bigrams_quanteda <-  
+bigrams <-  
   #tokenization
   tokens(classified_texts$review, what = "word", remove_punct = T, 
          remove_symbols = T, 
@@ -70,68 +74,74 @@ bigrams_quanteda <-
   as.matrix()
 
 
-# Quanteda - Term Frequency - Inverse Document Frequency (TF-IDF) ---------
-# Since some reviews are longer than others, we do term frequency to normalize all
+# Term Frequency - Inverse Document Frequency (TF-IDF) ---------
+# Since some reviews are longer than others, "term frequency" will normalize all
 # reviews to be length independant. We also accounts for the frequency of bigrams
 # appearing in virtually every documents with the IDF calculation. We multiply
 # both TF and IDF for each cell in the matrix.
 
 # normalize all documents with term frequency
-bigrams_quanteda_tf <- apply(bigrams_quanteda, 1, 
-                             function(row) row/sum(row))
+bigrams_tf <- apply(bigrams, 1, 
+                    function(row) row/sum(row))
 
 # calculate the inverse document frequency
-bigrams_quanteda_idf <- apply(bigrams_quanteda, 2, 
-                              function(col) log10(length(col) / length(which(col > 0))))
+bigrams_idf <- apply(bigrams, 2, 
+                     function(col) log10(length(col) / length(which(col > 0))))
 
 # calculate TF-IDF 
-bigrams_quanteda_tfidf <-  apply(bigrams_quanteda_tf, 2, 
-                                 function(x, idf) x * idf, idf = bigrams_quanteda_idf)
+bigrams_tfidf <-  apply(bigrams_tf, 2, 
+                        function(x, idf) x * idf, idf = bigrams_idf)
 
 # transpose the matrix
-bigrams_quanteda_tfidf <- t(bigrams_quanteda_tfidf)
+bigrams_tfidf <- t(bigrams_tfidf)
 
 # check and fix incomplete cases
-incomplete_cases <- which(!complete.cases(bigrams_quanteda_tfidf))
-bigrams_quanteda_tfidf[incomplete_cases,] <- rep(0.0, ncol(bigrams_quanteda_tfidf))
+incomplete_cases <- which(!complete.cases(bigrams_tfidf))
+bigrams_tfidf[incomplete_cases,] <- rep(0.0, ncol(bigrams_tfidf))
 
 
-# Quanteda - model testing ------------------------------------------------
+# Singular value decomposition (SVD) --------------------------------------
 
-# matrix to data.frame and addition of the "fake" column
-bigrams_quanteda <- cbind(fake = classified_texts$fake, 
-                          as.data.frame(bigrams_quanteda_tfidf))
+# reduce dimensionality so that it is more memory-efficient. Find a
+# few approximate singular values and corresponding singular vectors of the
+# matrix. The new 300 columns it returns are the single most significant
+# representations of the data extracted out of the TFIDF matrix.
+bigrams_irlba <- irlba::irlba(t(bigrams_tfidf), nv = 300, maxit = 600)
 
-# make syntactically valid names, for no future problems
-names(bigrams_quanteda) <- make.names(names(bigrams_quanteda))
+# # the steps to project new data (e.g., a test data) into the SVD semantic 
+# # space using a row of the training data that has already been transformed
+# # by TF-IDF. look irlba help document for d and u values
+# sigma_inverse <- 1 / bigrams_irlba$d
+# u_transpose <- t(bigrams_irlba$u)
+# document <- bigrams_tfidf[1,] # the review to project
+# document_hat <- sigma_inverse * u_transpose %*% document
 
-# fixing problems if duplicated column names (unusual, should not happen)
-bigrams_quanteda <- bigrams_quanteda[, !duplicated(colnames(bigrams_quanteda))]
+
+# Random Forest -----------------------------------------------------------
+
+train_data <- data.frame(fake = classified_texts$fake, bigrams_irlba$v)
 
 # create stratified folds for 10-fold cross validation repeated 
 # 3 times (30 random stratified samples)
-cv_folds <- createMultiFolds(bigrams_quanteda$fake, k = 10, times = 3)
+cv_folds <- createMultiFolds(classified_texts$fake, k = 10, times = 3)
 
 cv_control <- trainControl(method = "repeatedcv", number = 10,
-                         repeats = 3, index = cv_folds)
+                           repeats = 3, index = cv_folds)
 
-# Allow for working on x logical cores (working on all OS)
-cl <- parallel::makeCluster(parallel::detectCores()-1, type = "SOCK", outfile = "")
+# allow for working on x logical cores (working on all OS)
+cl <- parallel::makeCluster(parallel::detectCores()-1, type = "SOCK")
 doSNOW::registerDoSNOW(cl)
 
-# test the model
-model <- train(fake ~ ., data = bigrams_quanteda, method = "rpart", 
-                    trControl = cv_control, tuneLength = 7)
+# Use Random Forest with the default of 500 trees and allow caret to try 7 
+# different values of mtry to find the mtry value that gives the best result
+randomforest_res <- train(fake ~ ., data = train_data, method = "rf",
+                trControl = cv_control, tuneLength = 7)
 
-# stop cluster
+# Processing is done, stop cluster.
 parallel::stopCluster(cl)
 
-# Take a look at model
-model
-# With 2k of classified text, accuracy is 61% for uni-gram, 55% for bigrams.
+# info about the model
+randomforest_res
+confusionMatrix(train_data$fake, randomforest_res$finalModel$predicted)
 
-
-# Quanteda - Random Forest ------------------------------------------------
-
-
-
+# Accuracy of the model with 1k observations is, at the moment, 61%
