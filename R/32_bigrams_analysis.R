@@ -66,7 +66,7 @@ bigrams <-
   # words stemming
   tokens_wordstem(language = "english") %>% 
   # making bigrams
-  tokens_ngrams(n = 2) %>% 
+  # tokens_ngrams(n = 2) %>% 
   # to document-feature matrix
   dfm() %>% 
   # trim because it's too large!
@@ -107,19 +107,73 @@ bigrams_tfidf[incomplete_cases,] <- rep(0.0, ncol(bigrams_tfidf))
 # matrix. The new 300 columns it returns are the single most significant
 # representations of the data extracted out of the TFIDF matrix.
 bigrams_irlba <- irlba::irlba(t(bigrams_tfidf), nv = 300, maxit = 600)
+bigrams_irlba <- as_tibble(bigrams_irlba$v)
 
-# # the steps to project new data (e.g., a test data) into the SVD semantic 
-# # space using a row of the training data that has already been transformed
-# # by TF-IDF. look irlba help document for d and u values
-# sigma_inverse <- 1 / bigrams_irlba$d
-# u_transpose <- t(bigrams_irlba$u)
-# document <- bigrams_tfidf[1,] # the review to project
-# document_hat <- sigma_inverse * u_transpose %*% document
+
+# Cosine similarity -------------------------------------------------------
+# to check similarity of fake reviews in the vector space. Risky feature,
+# it can quickly result in overfitting. 
+
+bigrams_similarities <- lsa::cosine(t(as.matrix(bigrams_irlba)))
+
+# take every review and find the mean cosine similarity to fake reviews. The
+# hypothesis is that fake reviews are more similar to fake ones than genuine ones
+fake_indexes <- which(classified_texts$fake == T)
+
+bigrams_cs <- 
+bigrams_irlba %>% 
+  mutate(fake_similarity = as.numeric(0))
+
+for(i in 1:nrow(bigrams_cs)){
+  bigrams_cs$fake_similarity[i] <- mean(bigrams_similarities[i, fake_indexes])
+}
+
+# visualize
+ggplot(data.frame(bigrams_cs, fake = classified_texts$fake), aes(fake_similarity, fill = fake))+
+  theme_bw()+
+  geom_histogram(binwidth = 0.005)+
+  labs(y = "Review count",
+       x = "Mean fake review cosine similarity",
+       title = "Distribution of fake vs genuine using fake review cosine similarity")
+# On a per review basis, what is the average cosine similarity between a review and
+# all other fake reviews. On the middle of the graph, close to 0, there is a
+# higher amount of genuine reviews, meaning they have no cosine similarity with 
+# the fake reviews. The hypothesis that in general fake reviews should have 
+# higher cosine similarity on average with other fake reviews then they do with 
+# genuine reviews is true. Vice-versa is also true. 
+
+
+# Addition of LIWC --------------------------------------------------------
+
+liwc_results <- 
+  (read.csv("output/liwc2015_results.csv", dec = ",") %>% 
+     as_tibble() %>% 
+     rename(review_ID = A,
+            review = B))[-1,] %>% 
+  mutate(review_ID = as.numeric(review_ID)) %>% 
+  filter(review_ID %in% classified_texts$review_ID) %>% 
+  select(review_ID, WC, WPS, Authentic, Analytic,  Tone, Exclam, #  Linguistic processes
+           function., ppron, i, we, shehe, they, adj, # Function words
+           affect, posemo, negemo, # Psychological processes - emotional
+           social, family, friend, female, male, # Psychological processes - social
+           cogproc, insight, cause, discrep, tentat, certain, differ, # Psychological processes - cognitive
+           time, focuspast, focuspresent, focusfuture, space, relativ, # Psychological processes - time and space
+           percept, see, hear, feel, # Psychological processes - perceptual
+           bio, body, health, sexual, ingest, # Psychological processes - biological
+           work, leisure, home, money, relig) # Personal concerns
+
+bigrams_liwc <- 
+  data.frame(review_ID = classified_texts$review_ID,
+             fake = classified_texts$fake,
+             bigrams_cs) %>% 
+  inner_join(liwc_results, by = "review_ID") %>% 
+  select(-review_ID)
+
 
 
 # Random Forest -----------------------------------------------------------
 
-train_data <- data.frame(fake = classified_texts$fake, bigrams_irlba$v)
+train_data <- bigrams_liwc
 
 # create stratified folds for 10-fold cross validation repeated 
 # 3 times (30 random stratified samples)
@@ -132,16 +186,24 @@ cv_control <- trainControl(method = "repeatedcv", number = 10,
 cl <- parallel::makeCluster(parallel::detectCores()-1, type = "SOCK")
 doSNOW::registerDoSNOW(cl)
 
-# Use Random Forest with the default of 500 trees and allow caret to try 7 
+# use Random Forest with the default of 500 trees and allow caret to try 7 
 # different values of mtry to find the mtry value that gives the best result
 randomforest_res <- train(fake ~ ., data = train_data, method = "rf",
-                trControl = cv_control, tuneLength = 7)
+                trControl = cv_control, tuneLength = 7, importance = TRUE)
 
 # Processing is done, stop cluster.
 parallel::stopCluster(cl)
 
 # info about the model
 randomforest_res
+# preds <- predict(randomforest_res, train_data)
+# confusionMatrix(preds, train_data$fake)
 confusionMatrix(train_data$fake, randomforest_res$finalModel$predicted)
+randomForest::varImpPlot(randomforest_res$finalModel)
+# On the last set of info, keep an eye on what is referenced and what is
+# predicted. Tagging a genuine review as fake is worse than tagging a fake review
+# as genuine. "Sensitivity" needs to be high.
 
-# Accuracy of the model with 1k observations is, at the moment, 61%
+# Accuracy of the model with uni-gram and 1k observations is, at the moment, 74%
+# Most important variables are fake_similarity (maybe a sign of overfitting), the
+# use of the first person pronouns and a focus on past tense.
