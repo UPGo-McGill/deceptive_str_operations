@@ -125,13 +125,11 @@ genuine_reviews <-
 
 # Prepare for statistical model -------------------------------------------
 
-# # Both fake and genuine text reviews in one dataframe
-# classified_texts <-
-#   rbind(fake_reviews, sample_n(genuine_reviews, nrow(fake_reviews))) %>%  # My issue here is that I have way more
-#                                                                           # "genuine" than "fake" reviews
-#   mutate(fake = as.factor(fake))
-
-# There's a need to equilibrate fake/genuine reviews
+# Both fake and genuine text reviews in one dataframe, using undersampling
+classified_texts <-
+  rbind(fake_reviews, sample_n(genuine_reviews, nrow(fake_reviews))) %>%  # My issue here is that I have way more
+                                                                          # "genuine" than "fake" reviews
+  mutate(fake = as.factor(fake))
 
 # Visualize the two classes
 classified_texts %>% 
