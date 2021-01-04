@@ -68,7 +68,7 @@ fake_reviews <-
   mutate(fake = F,
          fake = case_when(
            user_ID == host_ID ~ T, # User = Host
-           user_city == property_city & property_created == review_date ~ T, # user_city = property_city & property_created = review_date
+           user_city == property_city & property_created == review_date ~ T,
            review_ID %in% multiple_reviews_same_host ~ T,
            review_ID %in% same_review ~ T,
            F == F ~ F
@@ -125,7 +125,8 @@ genuine_reviews <-
 
 # Prepare for statistical model -------------------------------------------
 
-# Both fake and genuine text reviews in one dataframe, using undersampling
+# Both fake and genuine text reviews in one dataframe, using random undersampling. 
+# I should think about trying oversampling, or cost-sensitive classification
 classified_texts <-
   rbind(fake_reviews, sample_n(genuine_reviews, nrow(fake_reviews))) %>%  # My issue here is that I have way more
                                                                           # "genuine" than "fake" reviews
@@ -133,12 +134,10 @@ classified_texts <-
 
 # Visualize the two classes
 classified_texts %>% 
-  mutate(text_length = nchar(review)) %>%
+  mutate(text_length = nchar(review)) %>% 
   ggplot()+
-  geom_histogram(aes(text_length, fill = fake), binwidth = 10)
-# Fake reviews are much smaller reviews in length
-
-
+  geom_density(aes(text_length, fill = fake), binwidth = 10, alpha = 0.5)
+# fake reviews are usually smaller in character length
 
 # Save --------------------------------------------------------------------
 

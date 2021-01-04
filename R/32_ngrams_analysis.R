@@ -50,7 +50,7 @@ load("output/classified_texts.Rdata")
 # Quanteda - ngrams analysis ---------------------------------------------
 
 # decreased size needed due to lack of computational power
-classified_texts <- sample_n(classified_texts, size = nrow(classified_texts)/7)
+classified_texts <- sample_n(classified_texts, size = nrow(classified_texts)/28)
 
 # create a 70%/30% stratified split
 # Use caret to create a 70%/30% stratified split. Set the random
@@ -59,8 +59,6 @@ training_samples <- createDataPartition(classified_texts$fake, times = 1,
 
 train_data_raw <- classified_texts[training_samples,]
 test_data_raw <- classified_texts[-training_samples,]
-
-
 
 
 # Quanteda - ngrams creation ---------------------------------------------
@@ -80,8 +78,8 @@ ngrams_train_dfm <-
   # tokens_ngrams(n = 2) %>%
   # to document-feature matrix
   dfm() %>% 
-  # trim because it's too large!
-  dfm_trim(min_docfreq = 1, min_termfreq = 2)
+  # trim because it's too large to convert in matrix!
+  dfm_trim(min_docfreq = 1, min_termfreq = 3)
 
 # convert it to matrix for next steps
 ngrams_train <- 
@@ -195,7 +193,6 @@ ngrams_train_liwc <-
   select(-review_ID)
 
 
-
 # Fit the model -----------------------------------------------------------
 
 train_data <- ngrams_train_liwc
@@ -205,25 +202,41 @@ train_data <- ngrams_train_liwc
 cv_folds <- createMultiFolds(train_data_raw$fake, k = 10, times = 3)
 
 cv_control <- trainControl(method = "repeatedcv", number = 10,
-                           repeats = 3, index = cv_folds)
+                           repeats = 3, index = cv_folds,
+                           savePredictions = "final",
+                           classProbs = TRUE)
 
 # allow for working on x logical cores (working on all OS)
-cl <- parallel::makeCluster(parallel::detectCores()-1, type = "SOCK")
+cl <- makeCluster(detectCores()-1, type = "SOCK")
 doSNOW::registerDoSNOW(cl)
 
 # use Random Forest with the default of 500 trees and allow caret to try 7 
 # different values of mtry to find the mtry value that gives the best result
-randomforest_res <- train(fake ~ ., data = train_data, method = "rf",
-                trControl = cv_control, tuneLength = 7, importance = TRUE)
+randomforest_res <- train(make.names(fake) ~ ., data = train_data, method = "rf",
+                          trControl = cv_control, tuneLength = 7, importance = TRUE)
+
+
+# trying another model
+cv_control <- trainControl(method = "cv", 
+                           savePredictions = "final",
+                           classProbs = TRUE)
+
+glm_res <- train(make.names(fake) ~ ., data = train_data, method = "glm", family = "binomial",
+                 trControl = cv_control)
 
 # Processing is done, stop cluster.
-parallel::stopCluster(cl)
+stopCluster(cl)
 
 # info about the model
 randomforest_res
-# preds <- predict(randomforest_res, train_data)
-# confusionMatrix(preds, train_data$fake)
-confusionMatrix(train_data$fake, randomforest_res$finalModel$predicted)
+
+confusionMatrix(train_data$fake, 
+                # when I use classProbs at cv_control to be able to use evalm,
+                # I need to use make.names(fake) when I fit the model. It adds
+                # a dot at the end of each T or F, so I take it out for this
+                # function to work.
+                as.factor(str_replace_all(randomforest_res$finalModel$predicted, "\\.", "")))
+
 randomForest::varImpPlot(randomforest_res$finalModel)
 # On the last set of info, keep an eye on what is referenced and what is
 # predicted. Tagging a genuine review as fake is worse than tagging a fake review
@@ -234,6 +247,19 @@ randomForest::varImpPlot(randomforest_res$finalModel)
 # use of the first person pronouns and the time variables.
 
 
+
+# get even more info about the model, like the receiver operating characteristic 
+# curve. I use this measure because I want to decrease false positives, even if 
+# means it will rise my false negatives. In this academic context, a genuine 
+# review classified as fake is more hurtful than the a fake review classified 
+# as genuine. 
+eval <- MLeval::evalm(list(randomforest_res, glm_res), gnames = c("rf", "glm"))
+
+eval$roc
+eval$prg
+eval$cc
+
+# At the moment the accuracy or the area under the ROC curve (AUC-RIC) is 0.66.
 
 # Prepare the test data ---------------------------------------------------
 
@@ -346,5 +372,6 @@ preds <- predict(randomforest_res, test_data)
 confusionMatrix(preds, test_data$fake)
 
 # Without the fake_similarity feature, accuracy is 66% with unigrams and LIWC,
-# and 69% for sensitivity. With ngrams, 66% accuracy and 65% sensitivity. In
-# our cases, I think we should favorise unigrams.
+# and 69% for sensitivity. With bigrams, 66% accuracy and 65% sensitivity. In
+# our cases, I think we should favorize unigrams.
+  
