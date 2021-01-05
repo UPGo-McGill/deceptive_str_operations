@@ -1,0 +1,92 @@
+---
+title: "Chap. 5 - Fraudulent Reviews Identification and Analysis"
+header-includes:
+   - \usepackage[default]{sourcesanspro}
+mainfont: sourcesanspro
+author: "Max"
+date: "`r format(Sys.time(), '%B %Y')`"
+output: pdf_document
+params: 
+  geo: Montreal
+  proj: 32618
+---
+
+
+```{r setup, include = FALSE}
+knitr::opts_chunk$set(fig.align = 'center', echo = TRUE)
+```
+
+```{r data, include = FALSE}
+library(here)
+source(here("R", "01_source.R"))
+
+load(here("output", "str_processed.Rdata"))
+load(here("output", "review_processed.Rdata"))
+load(here("output", "fake_reviews.Rdata"))
+
+geography <- cancensus::get_census(dataset = "CA16",
+                      regions = list(CSD = c(2466023)),
+                      level = "CSD",
+                      geo_format = "sf") %>% 
+  st_transform(params$proj)
+
+```
+
+```{r review_overview, include = FALSE}
+
+date_first_review <- 
+  review %>% 
+  summarize(min(date)) %>% 
+  pull() %>% 
+  format("%B %Y")
+
+date_last_review <- 
+  review %>% 
+  summarize(max(date)) %>% 
+  pull() %>% 
+  format("%B %Y")
+
+nb_reviews <- 
+  review_text %>% 
+  nrow() %>% 
+  prettyNum(",")
+  
+  
+```
+
+The first review on Airbnb, in `r params$geo`, is dated from `r date_first_review`. Since then, and up to `r date_last_review` in the same geography, a total of `r nb_reviews` reviews in English and of at least 5 words have been let on the platform. 
+
+## Review localisation
+
+During the period mentioned above, here are the review hot spots. No surprise it is in the central city, where there is also a greater percentage of STR. 
+```{r plot_reviews, echo = FALSE, warning = FALSE}
+
+# Add a geometry to each review
+review_geometry <- 
+  review %>% 
+  left_join(select(property, property_ID), by = "property_ID") %>% 
+  st_as_sf()
+  
+review_geometry %>% 
+  ggplot()+
+  geom_sf(data = geography)+
+  # geom_sf(size = 0.01)+
+  # stat_density_2d(mapping = ggplot2::aes(x = purrr::map_dbl(geometry, ~.[1]),
+  #                                        y = purrr::map_dbl(geometry, ~.[2]),
+  #                                        fill = stat(density)),
+  #                 geom = 'tile',
+  #                 contour = FALSE,
+  #                 alpha = 0.5)+
+  # stat_density_2d(mapping = ggplot2::aes(x = purrr::map_dbl(geometry, ~.[1]),
+  #                                        y = purrr::map_dbl(geometry, ~.[2])))+
+  # stat_density_2d(mapping = ggplot2::aes(x = purrr::map_dbl(geometry, ~.[1]),
+  #                                         y = purrr::map_dbl(geometry, ~.[2]),
+  #                                        fill = ..level..), geom = "polygon")+
+  geom_hex(mapping = ggplot2::aes(x = purrr::map_dbl(geometry, ~.[1]),
+               y = purrr::map_dbl(geometry, ~.[2]),
+               fill = stat(density)), 
+           bins = 100) +
+  scale_fill_continuous(type = "viridis")+
+  theme_void()
+  
+```
