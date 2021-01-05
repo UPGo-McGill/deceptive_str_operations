@@ -50,7 +50,7 @@ load("output/classified_texts.Rdata")
 # Quanteda - ngrams analysis ---------------------------------------------
 
 # decreased size needed due to lack of computational power
-classified_texts <- sample_n(classified_texts, size = nrow(classified_texts)/28)
+classified_texts <- sample_n(classified_texts, size = nrow(classified_texts)/14)
 
 # create a 70%/30% stratified split
 # Use caret to create a 70%/30% stratified split. Set the random
@@ -75,11 +75,11 @@ ngrams_train_dfm <-
   # words stemming
   tokens_wordstem(language = "english") %>% 
   # making bigrams
-  # tokens_ngrams(n = 2) %>%
+  tokens_ngrams(n = 2) %>%
   # to document-feature matrix
   dfm() %>% 
   # trim because it's too large to convert in matrix!
-  dfm_trim(min_docfreq = 1, min_termfreq = 3)
+  dfm_trim(min_docfreq = 1, min_termfreq = 2)
 
 # convert it to matrix for next steps
 ngrams_train <- 
@@ -185,6 +185,14 @@ liwc_results_train_data <-
            bio, body, health, sexual, ingest, # Psychological processes - biological
            work, leisure, home, money, relig) # Personal concerns
 
+# liwc only
+train_data_liwc <- 
+  data.frame(review_ID = train_data_raw$review_ID,
+             fake = train_data_raw$fake) %>% 
+  inner_join(liwc_results_train_data, by = "review_ID") %>% 
+  select(-review_ID)
+
+# ngrams with liwc
 ngrams_train_liwc <- 
   data.frame(review_ID = train_data_raw$review_ID,
              fake = train_data_raw$fake,
@@ -192,6 +200,10 @@ ngrams_train_liwc <-
   inner_join(liwc_results_train_data, by = "review_ID") %>% 
   select(-review_ID)
 
+# ngrams only
+train_data_ngrams <- 
+data.frame(fake = train_data_raw$fake,
+           ngrams_train_svd)
 
 # Fit the model -----------------------------------------------------------
 
@@ -210,19 +222,41 @@ cv_control <- trainControl(method = "repeatedcv", number = 10,
 cl <- makeCluster(detectCores()-1, type = "SOCK")
 doSNOW::registerDoSNOW(cl)
 
-# use Random Forest with the default of 500 trees and allow caret to try 7 
-# different values of mtry to find the mtry value that gives the best result
+# Next, use Random Forest with the default of 500 trees and allow caret to try 7 
+# different values of mtry to find the mtry value that gives the best result.
+# RF for both ngrams and liwc
 randomforest_res <- train(make.names(fake) ~ ., data = train_data, method = "rf",
                           trControl = cv_control, tuneLength = 7, importance = TRUE)
 
-
-# trying another model
+# GLM with ngrams and liwc
 cv_control <- trainControl(method = "cv", 
                            savePredictions = "final",
                            classProbs = TRUE)
-
 glm_res <- train(make.names(fake) ~ ., data = train_data, method = "glm", family = "binomial",
                  trControl = cv_control)
+
+# RF only for ngrams
+train_data <- train_data_ngrams
+cv_folds <- createMultiFolds(train_data_raw$fake, k = 10, times = 3)
+cv_control <- trainControl(method = "repeatedcv", number = 10,
+                           repeats = 3, index = cv_folds,
+                           savePredictions = "final",
+                           classProbs = TRUE)
+randomforest_res_ngrams <- train(make.names(fake) ~ ., data = train_data, method = "rf",
+                                 trControl = cv_control, tuneLength = 7, importance = TRUE)
+
+#RF only for liwc
+train_data <- train_data_liwc
+cv_folds <- createMultiFolds(train_data_raw$fake, k = 10, times = 3)
+cv_control <- trainControl(method = "repeatedcv", number = 10,
+                           repeats = 3, index = cv_folds,
+                           savePredictions = "final",
+                           classProbs = TRUE)
+randomforest_res_liwc <- train(make.names(fake) ~ ., data = train_data, method = "rf",
+                               trControl = cv_control, tuneLength = 7, importance = TRUE)
+
+
+
 
 # Processing is done, stop cluster.
 stopCluster(cl)
@@ -252,14 +286,15 @@ randomForest::varImpPlot(randomforest_res$finalModel)
 # curve. I use this measure because I want to decrease false positives, even if 
 # means it will rise my false negatives. In this academic context, a genuine 
 # review classified as fake is more hurtful than the a fake review classified 
-# as genuine. 
-eval <- MLeval::evalm(list(randomforest_res, glm_res), gnames = c("rf", "glm"))
+# as genuine. the ROC will help choose a threshold.
+eval <- MLeval::evalm(list(randomforest_res, randomforest_res_ngrams, 
+                           randomforest_res_liwc, glm_res), 
+                      gnames = c("rf", "rf_ngrams", "rf_liwc", "glm"))
 
 eval$roc
 eval$prg
 eval$cc
 
-# At the moment the accuracy or the area under the ROC curve (AUC-RIC) is 0.66.
 
 # Prepare the test data ---------------------------------------------------
 
@@ -367,11 +402,49 @@ test_data <- ngrams_test_liwc
 
 preds <- predict(randomforest_res, test_data)
 
-
 # take a look at the results
-confusionMatrix(preds, test_data$fake)
+confusionMatrix(as.factor(str_replace_all(preds, "\\.", "")), test_data$fake)
 
 # Without the fake_similarity feature, accuracy is 66% with unigrams and LIWC,
 # and 69% for sensitivity. With bigrams, 66% accuracy and 65% sensitivity. In
 # our cases, I think we should favorize unigrams.
-  
+
+
+# I can change the threshold value to favor sensitivity over specificity (Less
+# genuine predicted as fake, but more fake predicted as genuine)
+test_result <- 
+  test_data %>% 
+  modelr::add_predictions(randomforest_res, type = "prob") %>%
+  as_tibble() %>% 
+  mutate(predicted_fake = ifelse(pred$TRUE. > 0.75, TRUE, FALSE)) %>% 
+  select(fake, predicted_fake)
+
+confusionMatrix(as.factor(test_result$predicted_fake), test_result$fake)
+
+test_result <- 
+  test_data %>% 
+  modelr::add_predictions(randomforest_res_liwc, type = "prob") %>%
+  as_tibble() %>% 
+  mutate(predicted_fake = ifelse(pred$TRUE. > 0.6, TRUE, FALSE)) %>% 
+  select(fake, predicted_fake)
+
+confusionMatrix(as.factor(test_result$predicted_fake), test_result$fake)
+
+test_result <- 
+  test_data %>% 
+  modelr::add_predictions(randomforest_res_ngrams, type = "prob") %>%
+  as_tibble() %>% 
+  mutate(predicted_fake = ifelse(pred$TRUE. > 0.5, TRUE, FALSE)) %>% 
+  select(fake, predicted_fake)
+
+confusionMatrix(as.factor(test_result$predicted_fake), test_result$fake)
+
+test_result <- 
+  test_data %>% 
+  modelr::add_predictions(glm_res, type = "prob") %>%
+  as_tibble() %>% 
+  mutate(predicted_fake = ifelse(pred$TRUE. > 0.5, TRUE, FALSE)) %>% 
+  select(fake, predicted_fake)
+
+confusionMatrix(as.factor(test_result$predicted_fake), test_result$fake)
+
