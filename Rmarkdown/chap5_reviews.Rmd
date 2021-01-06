@@ -14,6 +14,8 @@ params:
 
 ```{r setup, include = FALSE}
 knitr::opts_chunk$set(fig.align = 'center', echo = TRUE)
+if (memory.limit() < 20000) memory.limit(size = memory.limit()*3)
+
 ```
 
 ```{r data, include = FALSE}
@@ -22,7 +24,7 @@ source(here("R", "01_source.R"))
 
 load(here("output", "str_processed.Rdata"))
 load(here("output", "review_processed.Rdata"))
-load(here("output", "fake_reviews.Rdata"))
+load(here("output", "fake_reviews_uc.Rdata"))
 
 geography <- cancensus::get_census(dataset = "CA16",
                       regions = list(CSD = c(2466023)),
@@ -31,7 +33,7 @@ geography <- cancensus::get_census(dataset = "CA16",
   st_transform(params$proj)
 
 ```
-
+# Review overview
 ```{r review_overview, include = FALSE}
 
 date_first_review <- 
@@ -56,9 +58,9 @@ nb_reviews <-
 
 The first review on Airbnb, in `r params$geo`, is dated from `r date_first_review`. Since then, and up to `r date_last_review` in the same geography, a total of `r nb_reviews` reviews in English and of at least 5 words have been let on the platform. 
 
-## Review localisation
+## Review location
 
-During the period mentioned above, here are the review hot spots. No surprise it is in the central city, where there is also a greater percentage of STR. 
+During the period mentioned above, here is a heat map of all reviews. No surprise, the most reviews were let in the central city, where there is also a greater percentage of STR. 
 ```{r plot_reviews, echo = FALSE, warning = FALSE}
 
 # Add a geometry to each review
@@ -69,7 +71,7 @@ review_geometry <-
   
 review_geometry %>% 
   ggplot()+
-  geom_sf(data = geography)+
+  geom_sf(data = geography, color = "white")+
   # geom_sf(size = 0.01)+
   # stat_density_2d(mapping = ggplot2::aes(x = purrr::map_dbl(geometry, ~.[1]),
   #                                        y = purrr::map_dbl(geometry, ~.[2]),
@@ -86,7 +88,128 @@ review_geometry %>%
                y = purrr::map_dbl(geometry, ~.[2]),
                fill = stat(density)), 
            bins = 100) +
-  scale_fill_continuous(type = "viridis")+
+  scale_fill_continuous(type = "viridis", 
+                        limits = c(0, 0.025), #oob = scales::squish, 
+                        labels = scales::percent)+
   theme_void()
   
 ```
+
+# Fake review identification
+
+```{r fake_review_identification, include = FALSE}
+
+fake_reviews <- 
+  fake_reviews_uc %>% #later, the ones from the model will be added too
+  pull(review_ID)
+
+nb_fake_reviews <- 
+  length(fake_reviews) %>% #+ nrow(fake_reviews_model)
+  prettyNum(",") 
+
+nb_fake_reviews_eh <- 
+  review %>% 
+  filter(review_ID %in% fake_reviews,
+         property_ID %in% (property %>% st_drop_geometry() %>% filter(listing_type == "Entire home/apt") %>% pull(property_ID))) %>% 
+  nrow() %>% 
+  prettyNum(",")
+
+nb_fake_reviews_uc <- 
+  fake_reviews_uc %>% 
+  nrow() %>% 
+  prettyNum(",")
+
+# nb_fake_reviews_model <-
+#   fake_reviews_model %>%
+#   nrow()
+
+
+
+```
+
+In `r params$geo`, we identified a total of `r nb_fake_reviews` fake reviews. A two-fold operation was made to get to this number. The first step was to identify, with the digital footprint of every account on Airbnb, which review was potentially fraudulent looking at the user-centric aspect of each of them. We decided of four different characteristics; if a review fell into at least one of those, we flagged it as potentially fraudulent.
+
+* A review let by an account to another, both part of the same network of accounts;
+* A review let in a city by an account from the same city, and let in the first month of operation (technique to alleviate the "cold start" problem);
+* A review part of multiple other reviews let by the reviewer to the same one reviewee;
+* A review text identical to other reviews let by the same account.
+
+When this first step of identification was done, we identified a total of `r nb_fake_reviews_uc` potential fake reviews. 
+
+The second step was to find the rest of the fake reviews, let by more creative fraudsters who calculate their digital footprint to not get detected. However, while it is easier to trick the system in not getting detected, falsify a review text for it to appear a hundred percent genuine needs a lot of creativity. Therefore, they must use the same textual characteristics as the previous fake reviews we identified.
+
+Consequently, we compared the textual characteristics of fake and genuine reviews to apply a model throughout the rest of the dataset. To achieve this, we identified a second set of reviews: the ones we considered had a high potential for genuineness. A review that fell into all of these characteristics was considered as potentially genuine:
+
+* The reviewer account does not belong to the reviewee's network of account;
+* The review was let at least 6 months after the creation of the listing;
+* The reviewer had at least a 3 months old account;
+* The review was the only review let by the reviewer to this reviewee;
+* The review text was unique throughout the platform.
+
+Having these two sets of reviews (fake and genuine) allowed us to fit a random forest regression model based only on textual characteristics using the Linguistic Inquiry and Work Count software (LIWC) mixed with bigrams, sequences of every two adjacent words, and apply the model to the rest of the review dataset. We changed the threshold to minimize the false positive classification and keep as much of a conservative number of fake reviews, and not falsely identify genuine reviews as fake. The final model x (model characteristics here), . Using this method, we found r nb_fake_reviews_model more fake reviews, for the total of `r nb_fake_reviews` fake reviews let in `r params$geo` between `r date_first_review` and `r date_last_review`, out of which `r nb_fake_reviews_eh` were in entire home listings.
+
+## Fake review analysis
+
+### Fake review location
+
+For the location of fake reviews, it is no surprise that the vast majority of them are located in the central part of the city. A notable difference with the plot showing all reviews is that there are virtually no fake reviews outside of the central part of the city.
+
+```{r fake_review_location, echo = FALSE, warning = FALSE}
+
+fake_reviews <- 
+  fake_reviews_uc %>% #later, the ones from the model will be added too
+  pull(review_ID)
+
+review_geometry %>% 
+  filter(review_ID %in% fake_reviews) %>% 
+  ggplot()+
+  geom_sf(data = geography, color = "white")+
+  geom_hex(mapping = ggplot2::aes(x = purrr::map_dbl(geometry, ~.[1]),
+               y = purrr::map_dbl(geometry, ~.[2]),
+               fill = stat(density)), 
+           bins = 100) +
+  scale_fill_continuous(type = "viridis", 
+                        limits = c(0, 0.025), oob = scales::squish,
+                        labels = scales::percent)+
+  theme_void()
+  
+
+
+```
+### Fake review and commercial operations
+
+```{r fake_review_commercial_operations, include = FALSE}
+
+date_first_property_scrape <- 
+  property %>%
+  st_drop_geometry() %>% 
+  summarize(min(scraped)) %>% 
+  pull() %>% 
+  format("%B %Y")
+
+date_last_property_scrape <- 
+  property %>%
+  st_drop_geometry() %>% 
+  summarize(max(scraped)) %>% 
+  pull() %>% 
+  format("%B %Y")
+
+commercial_properties <- 
+  daily %>% 
+  filter(multi == T | FREH > 0.5) %>%
+  count(property_ID) %>% 
+  pull(property_ID)
+
+commercial_fake_reviewed <- 
+  review %>% 
+  filter(review_ID %in% fake_reviews,
+         property_ID %in% (property %>% st_drop_geometry() %>% filter(listing_type == "Entire home/apt") %>% pull(property_ID))
+         # I filter in only entire home, since we use FREH. Not filtering this would bring down the % of reviews in commercial operations, because what is not an entire home is surely not positive to FREH.
+         ) %>% 
+  mutate(commercial = ifelse(property_ID %in% commercial_properties, T, F)) %>% 
+  count(commercial) %>% 
+  mutate(per = scales::percent(n/sum(n), accuracy = 0.1),
+         n = prettyNum(n, ","))
+
+```
+We have information about every property listing in `r params$geo` available for web scrape between `r date_first_property_scrape` and `r date_last_property_scrape`. With these information, we identified which entire-home listing were at least once in their lifetime flagged as commercial operations (either multilisting of a frequently rented entire home listing). Out of the `r nb_fake_reviews_eh` fake reviews let in entire homes, `r commercial_fake_reviewed[2,2]` (`r commercial_fake_reviewed[2,3]`) were let in commercial listings. Fraudulent reviewing is a behavior of commercial hosts.

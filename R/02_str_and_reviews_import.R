@@ -9,39 +9,69 @@ upgo_connect(review = T,
 
 # STR ---------------------------------------------------------------------
 
-property <- 
-  property_remote %>% 
-  filter(country == "Canada") %>% 
-  collect()
+for(a in 1:100) {
+  try({
+    property <- 
+      property_remote %>% 
+      filter(country == "Canada") %>% 
+      collect()
+    break
+  })
+}
 
-daily <- 
-  daily_all %>% 
-  filter(property_ID %in% !!property$property_ID) %>% 
-  collect()
+for(a in 1:100) {
+  try({
+    daily <- 
+      daily_remote %>% 
+      filter(property_ID %in% !!property$property_ID) %>% 
+      collect()
+    break
+  })
+}
 
-host <-
-  host_remote %>% 
-  filter(host_ID %in% !!property$host_ID) %>% 
-  collect() %>% 
-  strr_expand()
+for(a in 1:100) {
+  try({
+    host <-
+      host_remote %>% 
+      filter(host_ID %in% !!property$host_ID) %>% 
+      collect() %>% 
+      strr_expand()
+    break
+  })
+}
 
 
 # Reviews -----------------------------------------------------------------
 
-review <- 
-  review_all %>% 
-  filter(country == "Canada") %>% 
-  collect()
+for(a in 1:100) {
+  try({
+    review <- 
+      review_remote %>% 
+      filter(country == "Canada") %>% 
+      collect()
+    break
+  })
+}
 
-review_text <- 
-  review_text_all %>% 
-  filter(review_ID %in% !! review$review_ID) %>% 
-  collect()
+for(a in 1:100) {
+  try({
+    review_text <- 
+      review_text_remote %>% 
+      filter(review_ID %in% !! review$review_ID) %>% 
+      collect()
+    break
+  })
+}
 
-review_user <- 
-  review_user_all %>% 
-  filter(user_ID %in% !! review$user_ID) %>% 
-  collect()
+for(a in 1:100) {
+  try({
+    review_user <- 
+      review_user_remote %>% 
+      filter(user_ID %in% !! review$user_ID) %>% 
+      collect()
+    break
+  })
+}
 
 
 # Disconnect and save -----------------------------------------------------

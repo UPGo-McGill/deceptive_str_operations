@@ -58,12 +58,13 @@ multiple_reviews_same_host <-
 same_review <- ### Maybe excluding one-word or two-words review a good idea?
   review_text %>% 
   count(user_ID, review, sort=T) %>% 
-  filter(n>1) %>% 
+  filter(n>2) %>% # There seems to have an issue on Airbnb's side with double up
+                  # reviews. 
   inner_join(review_text, by = c("user_ID", "review")) %>% 
   pull(review_ID)
 
 # identifying which are the potential fake reviews vs genuine
-fake_reviews <- 
+fake_reviews_uc <- 
   matrice %>%
   mutate(fake = F,
          fake = case_when(
@@ -74,9 +75,9 @@ fake_reviews <-
            F == F ~ F
          ))
 
-fake_reviews <- 
+fake_reviews_uc <- 
   review_text %>% 
-  filter(review_ID %in% !! (fake_reviews %>% filter(fake == T) %>% pull(review_ID))) %>% 
+  filter(review_ID %in% !! (fake_reviews_uc %>% filter(fake == T) %>% pull(review_ID))) %>% 
   select(review_ID, review) %>% 
   mutate(fake = T)
 
@@ -97,9 +98,9 @@ one_review_per_host <-
 
 unique_review <- 
   review_text %>% 
-  count(user_ID, review, sort=T) %>% 
+  count(review, sort=T) %>% 
   filter(n == 1) %>% 
-  inner_join(review_text, by = c("user_ID", "review")) %>% 
+  inner_join(review_text, by = c("review")) %>% 
   pull(review_ID)
 
 genuine_reviews <- 
@@ -128,7 +129,7 @@ genuine_reviews <-
 # Both fake and genuine text reviews in one dataframe, using random undersampling. 
 # I should think about trying oversampling, or cost-sensitive classification
 classified_texts <-
-  rbind(fake_reviews, sample_n(genuine_reviews, nrow(fake_reviews))) %>%  # My issue here is that I have way more
+  rbind(fake_reviews_uc, sample_n(genuine_reviews, nrow(fake_reviews_uc))) %>%  # My issue here is that I have way more
                                                                           # "genuine" than "fake" reviews
   mutate(fake = as.factor(fake))
 
@@ -142,3 +143,4 @@ classified_texts %>%
 # Save --------------------------------------------------------------------
 
 save(classified_texts, file = "output/classified_texts.Rdata")
+save(fake_reviews_uc, file = "output/fake_reviews_uc.Rdata")

@@ -50,7 +50,7 @@ load("output/classified_texts.Rdata")
 # Quanteda - ngrams analysis ---------------------------------------------
 
 # decreased size needed due to lack of computational power
-classified_texts <- sample_n(classified_texts, size = nrow(classified_texts)/14)
+classified_texts <- sample_n(classified_texts, size = nrow(classified_texts)/2)
 
 # create a 70%/30% stratified split
 # Use caret to create a 70%/30% stratified split. Set the random
