@@ -105,6 +105,7 @@ unique_review <-
 
 genuine_reviews <- 
   matrice %>%
+  filter(!review_ID %in% fake_reviews_uc$review_ID) %>% 
   mutate(genuine = F,
          genuine = case_when(
            user_ID != host_ID &
