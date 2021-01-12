@@ -215,7 +215,7 @@ We have information about every property listing in `r params$geo` available for
 
 ### Fake reviews impact on a listing's success
 
-```{r fake_review_impacts, echo = FALSE, warning = FALSE}
+```{r fake_review_impacts, echo = FALSE, warning = FALSE, message = FALSE}
 
 fake_reviewed_properties <- 
   review %>% 
@@ -233,7 +233,38 @@ review %>%
   mutate(property_created = ym(str_extract(property_created, "^.{7}")),
          date_daily = ym(str_extract(date_daily, "^.{7}"))) %>% 
   group_by(review_ID, date_rev, property_ID, property_created, date_daily) %>% 
-  count(status) %>% 
+  count(status)
+
+rev_impacts_matrice_indexed <- 
+rev_impacts_matrice %>% 
+  mutate(index = case_when(date_rev-months(1) == date_daily ~ "Month before review",
+                           date_rev == date_daily ~ "Month of review",
+                           date_rev+months(1) == date_daily ~ "Month after review",
+                           TRUE ~ "filter_out"
+  )) %>% 
+  filter(index != "filter_out") %>% 
+  mutate(days_active = sum(n)) %>% 
+  ungroup() %>% 
+  filter(status == "R") %>% 
+  rename(days_res = n) %>% 
+  group_by(index) %>% 
+  summarize(per_res = mean(days_res/days_active))
+  
+rev_impacts_matrice_indexed %>% 
+  ggplot()+
+  geom_point(aes(factor(index, level = c("Month before review", "Month of review", "Month after review")), per_res))+
+  scale_y_continuous(limits = c(0.64, 0.73), labels = scales::percent)+
+  ggtitle("Impact of fake reviewing on listings' percentage \nof reserved active days")+
+  xlab(NULL)+
+  ylab("Percentage of reserved active days")
+
+```
+Previously is a figure presenting the percentage of reserved days out of all active days (either available or active) during the month prior to a fake review, the month of the review, and a month after it. On average, a fake review is let during a month of lower percentage of reserved active days compared to the precedent, but only in a marginal manner (difference of only `r scales::percent(pull(rev_impacts_matrice_indexed[2,2] - rev_impacts_matrice_indexed[3,2]), accuracy = 0.1)`). There is a significant spike for this statistic the month following a fake review, which passes from `r scales::percent(pull(rev_impacts_matrice_indexed[2,2]), accuracy = 0.1)` to `r scales::percent(pull(rev_impacts_matrice_indexed[1,2])`, accuracy = 0.1), a difference of `r scales::percent(pull(rev_impacts_matrice_indexed[1,2] - rev_impacts_matrice_indexed[2,2]), accuracy = 0.1)`. 
+
+```{r fake_review_by_month_impacts, echo = FALSE, warning = FALSE}
+
+fake_review_impacts_months <- 
+  rev_impacts_matrice %>% 
   # how many months between creation of the property and the review. I'm gonna have to find a fix to when we match airbnbs properties to one another. There will be one creation date. A review will maybe be let on the 13th months after creation, but in reality it's during the first month of the new listing. 
   mutate(months_from_creation = interval(property_created, date_rev) %/% months(1)) %>% 
   # some reviews are let prior to the creation of the property!
@@ -247,15 +278,15 @@ review %>%
   select(-review_ID) %>% 
   distinct()
 
-rev_impacts_matrice <-
-  rev_impacts_matrice %>% 
+fake_review_impacts_months <-
+  fake_review_impacts_months %>% 
   filter(date_rev == date_daily | date_rev+months(1) == date_daily) %>% 
   mutate(group2 = case_when(
     date_rev == date_daily ~ "Month of review",
     date_rev+months(1) == date_daily ~ "Month after review"
   )) %>% 
   group_by(months_from_creation, group2) %>% 
-  summarize(per_res = mean(days_res)/mean(days_active)) %>%
+  summarize(per_res = mean(days_res/days_active)) %>%
   ungroup() %>% 
   mutate(month = ifelse(group2 == "Month after review", months_from_creation-1, months_from_creation)) %>% 
   filter(month <= 12, month != -1)
@@ -283,7 +314,7 @@ daily %>%
   mutate(month = "Other commercial properties",
          group2 = NA)
 
-rev_impacts_matrice %>% 
+fake_review_impacts_months %>% 
   ggplot()+
   geom_line(aes(months_from_creation, per_res, group = month, color = as.factor(month)), size = 1)+
   geom_line(data = other_properties, aes(months_from_creation, per_res, group = month), size = 0.5)+
@@ -298,7 +329,7 @@ rev_impacts_matrice %>%
   scale_shape_manual(values = c(18, 17))+
   scale_x_continuous(breaks = 1:12, minor_breaks = NULL)+
   theme(legend.title = element_blank())+
-  ggtitle("Impact of fake reviewing on listings' percentage of reserved active days")+
+  ggtitle("Impact of fake reviewing on listings' percentage of reserved active days \ndepending of the month after creation")+
   xlab("Months from creation")+
   ylab("Percentage of reserved active days")
   
@@ -311,7 +342,7 @@ rev_impacts_matrice %>%
 # Should the graph have 12 lines monitoring activity from 0 to 12 months? And then we have a greater picture of before and after fake review depending of the month.
 
 ```
-Commercial listings who forge reviews have a higher percentage of reserved active days. The first two months of a listing is where the growth from month to month is the highest: listings gained reputation and with enough ratings and reviews, more reservations come. This is a normal characteristics of every listings. However, in the first two months of operation, listings who faked reviews had much higher percentage of reserved days. Fake reviews during the first two months of operation seems to be very advantageous: they alleviate the problem of cold start, when a listing has no reviews so has a harder to get reserved The distance between the fake reviewed listings' lines and the rest of the commercial listings shows the advantage of this fraudulent behavior.
+Commercial listings who forge reviews have a higher percentage of reserved active days. The first two months of a listing is where the growth from month to month is the highest: listings gained reputation and with enough ratings and reviews, more reservations come. This is a normal characteristics of every listings. However, in the first two months of operation, listings who faked reviews had much higher percentage of reserved days. Fake reviewing during the first two months of operation seems to be very advantageous: they alleviate the problem of cold start, when a listing has no reviews so has a harder time to get reserved. The vertical distance between the fake reviewed listings' lines and the rest of the commercial listings shows the advantage of this fraudulent behavior.
 
 There are some months where fake reviewing was followed by a decrease of the listing's percentage of reserved active days (A review in the third or fifth month of activity, for example). However, in every cases, the lines stay higher than the rest of the commercial listings. The impact of a fake review between the third and the seventh month of activity appears to be mitigated. On the eight and ninth month, a fake review has a huge impact on the the percentage of reserved active days. 
 
