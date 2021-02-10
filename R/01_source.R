@@ -4,6 +4,8 @@ library(tidyverse)
 library(sf)
 library(lubridate)
 library(parallel)
+library(qs)
+library(patchwork)
 
 
 if (Sys.info()["sysname"] != "Windows") plan(multicore, 

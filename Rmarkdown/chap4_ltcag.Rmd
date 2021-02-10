@@ -1,0 +1,138 @@
+---
+title: "Chap. 4 - Listings that come and go and host networks"
+header-includes:
+   - \usepackage[default]{sourcesanspro}
+mainfont: sourcesanspro
+author: "Max"
+date: "`r format(Sys.time(), '%B %Y')`"
+output: pdf_document
+params: 
+  geo: Montreal
+  proj: 32618
+---
+
+
+```{r setup, include = FALSE}
+
+library(here)
+source(here("R", "01_source.R"))
+
+# Function for checking file modifications
+mtime <- function(files) lapply(Sys.glob(files), function(x) file.info(x)$mtime)
+
+knitr::opts_chunk$set(echo = FALSE)
+knitr::opts_chunk$set(include = FALSE)
+knitr::opts_chunk$set(message = FALSE)
+knitr::opts_chunk$set(warning = FALSE)
+
+
+geography <- cancensus::get_census(dataset = "CA16",
+                      regions = list(CSD = c(2466023)),
+                      level = "CSD",
+                      geo_format = "sf") %>% 
+  st_transform(params$proj)
+
+```
+
+# Host networks overview
+
+A network of hosts is created when an account (a unique host ID) uses a listing photo also used by another listing of a different account, at a different moment in time. In this case, we regroup all listings of the two accounts under the same host ID. Multiple listings of the same account can match to an unlimited amount of different accounts that can also operate listings in other cities, which possibly have listings that match to other listings of other accounts. It can, in some cases, lead to the creation of a vast array of listings and accounts, regrouped under one single network of host, one host ID.
+
+```{r host_networks_overview, cache = TRUE, cache.lazy = FALSE, cache.extra = mtime(here("output", "review_processed.Rdata"))}
+
+qload(here("output", "str_processed.qsm"),
+      nthreads = parallel::detectCores()-1)
+
+host_networks <- 
+property %>% 
+  st_drop_geometry() %>% 
+  filter(!is.na(old_host)) %>% 
+  pull(host_ID) %>% 
+  unique()
+
+old_hosts <- 
+property %>% 
+  st_drop_geometry() %>% 
+  filter(!is.na(old_host)) %>% 
+  distinct(old_host) %>% nrow()
+
+host_group <- 
+property %>% 
+  st_drop_geometry() %>% 
+  distinct(host_ID) %>% 
+  mutate(network = ifelse(host_ID %in% host_networks, TRUE, FALSE)) 
+
+nb_host_by_group <- 
+host_group %>% 
+  count(network, name = "hosts") %>% 
+  mutate(percent = scales::percent(hosts/sum(hosts), accuracy = 0.1))
+
+listings_group <- 
+property %>% 
+  st_drop_geometry() %>% 
+  filter(scraped >= "2020-01-01") %>% 
+  mutate(network = ifelse(host_ID %in% host_networks, TRUE, FALSE))
+  
+listings_owned_by_group <- 
+  listings_group %>% 
+  count(network, name = "listings") %>% 
+  mutate(percent = scales::percent(listings/sum(listings), accuracy = 0.1))
+
+nb_listings_by_group <- 
+property %>% 
+  st_drop_geometry() %>% 
+  filter(scraped >= "2020-01-01") %>% 
+  count(host_ID, name = "listings") %>% 
+  mutate(`Host network` = ifelse(host_ID %in% host_networks, TRUE, FALSE)) %>% 
+  group_by(`Host network`) %>% 
+  summarize(`Listings on average` = round(mean(listings), digit = 2))
+
+FREH_by_group <- 
+property %>% 
+  st_drop_geometry() %>% 
+  filter(scraped >= "2020-01-01") %>% 
+  mutate(FREH_3 = ifelse(property_ID %in% (daily %>% 
+                                             filter(date >= "2020-01-01",
+                                                    FREH_3 >= 0.5) %>%
+                                             pull(property_ID) %>% unique()),
+                         TRUE, FALSE),
+         `Host network` = ifelse(host_ID %in% host_networks, TRUE, FALSE)) %>% 
+  group_by(`Host network`) %>% 
+  summarize(`% of FREH listings` = scales::percent(mean(FREH_3), accuracy = 0.1))
+
+rm(property, daily)
+```
+
+In `r params$geo`, we identified a total of `r length(host_networks)` host networks which are regrouping `r old_hosts` accounts, while the amount of hosts that are not part of a network is `r nb_host_by_group[1,2]`. These networks were operating `r listings_owned_by_group[2,2]` listings since the 1st of January 2020, which was almost a third (`r listings_owned_by_group[2,3]`) of the total active listings. 
+
+
+```{r per_network_listings1, cache = TRUE, cache.lazy = FALSE, cache.extra = mtime(here("output", "review_processed.Rdata"))}
+
+p1 <- host_group %>% 
+  ggplot()+
+  geom_bar(aes(network, y = (..count..)/sum(..count..), fill = network))+
+  scale_y_continuous(limits = c(0,1), labels = scales::percent)+
+  ylab("% of total hosts")+
+  xlab("Part of a host network")+
+  # ylim(0,1)+
+  theme(legend.position = "none")
+
+p2 <- listings_group %>% 
+  ggplot()+
+  geom_bar(aes(network, y = (..count..)/sum(..count..), fill = network))+
+  scale_y_continuous(limits = c(0,1), labels = NULL)+
+  ylab("% of total listings")+
+  xlab("Part of a host network")+
+  theme(legend.position = "none")
+
+```
+
+```{r per_network_listings2, include = TRUE, cache = TRUE, cache.lazy = FALSE, cache.extra = mtime(here("output", "review_processed.Rdata"))}
+
+p1+p2
+
+```
+
+Moreover, a network of host is more likely to operate many listings, and they are also more likely to be frequently rented listings, actively removing housing units from the long-term rental market. Indeed, a network of host (operates on average `r nb_listings_by_group[2,2]` listings) will on average operate four times more listings than an individual account (`r nb_listings_by_group[1,2]` listings), and almost half (`r FREH_by_group[2,2]`) of the listings operated by a network of host will be frequently rented while only a third (`r FREH_by_group[1,2]`) of the listings operated by individual accounts are.
+
+<!-- I could add info on the 3 top networks and the amount of listings they operated in 2020 -->
