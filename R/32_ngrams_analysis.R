@@ -6,7 +6,7 @@ library(quanteda)
 
 # Load data ---------------------------------------------------------------
 
-load("output/classified_texts.Rdata")
+classified_texts <- qread("output/classified_texts.qs")
 
 # Preparation for bigram analysis -----------------------------------------
 
@@ -50,7 +50,7 @@ load("output/classified_texts.Rdata")
 # Quanteda - ngrams analysis ---------------------------------------------
 
 # decreased size needed due to lack of computational power
-classified_texts <- sample_n(classified_texts, size = nrow(classified_texts)/2)
+classified_texts <- sample_n(classified_texts, size = nrow(classified_texts)/30)
 
 # create a 70%/30% stratified split
 # Use caret to create a 70%/30% stratified split. Set the random
@@ -79,7 +79,7 @@ ngrams_train_dfm <-
   # to document-feature matrix
   dfm() %>% 
   # trim because it's too large to convert in matrix!
-  dfm_trim(min_docfreq = 1, min_termfreq = 2)
+  dfm_trim(min_docfreq = 1, min_termfreq = 5)
 
 # convert it to matrix for next steps
 ngrams_train <- 
@@ -228,32 +228,32 @@ doSNOW::registerDoSNOW(cl)
 randomforest_res <- train(make.names(fake) ~ ., data = train_data, method = "rf",
                           trControl = cv_control, tuneLength = 7, importance = TRUE)
 
-# GLM with ngrams and liwc
-cv_control <- trainControl(method = "cv", 
-                           savePredictions = "final",
-                           classProbs = TRUE)
-glm_res <- train(make.names(fake) ~ ., data = train_data, method = "glm", family = "binomial",
-                 trControl = cv_control)
-
-# RF only for ngrams
-train_data <- train_data_ngrams
-cv_folds <- createMultiFolds(train_data_raw$fake, k = 10, times = 3)
-cv_control <- trainControl(method = "repeatedcv", number = 10,
-                           repeats = 3, index = cv_folds,
-                           savePredictions = "final",
-                           classProbs = TRUE)
-randomforest_res_ngrams <- train(make.names(fake) ~ ., data = train_data, method = "rf",
-                                 trControl = cv_control, tuneLength = 7, importance = TRUE)
-
-#RF only for liwc
-train_data <- train_data_liwc
-cv_folds <- createMultiFolds(train_data_raw$fake, k = 10, times = 3)
-cv_control <- trainControl(method = "repeatedcv", number = 10,
-                           repeats = 3, index = cv_folds,
-                           savePredictions = "final",
-                           classProbs = TRUE)
-randomforest_res_liwc <- train(make.names(fake) ~ ., data = train_data, method = "rf",
-                               trControl = cv_control, tuneLength = 7, importance = TRUE)
+# # GLM with ngrams and liwc
+# cv_control <- trainControl(method = "cv", 
+#                            savePredictions = "final",
+#                            classProbs = TRUE)
+# glm_res <- train(make.names(fake) ~ ., data = train_data, method = "glm", family = "binomial",
+#                  trControl = cv_control)
+# 
+# # RF only for ngrams
+# train_data <- train_data_ngrams
+# cv_folds <- createMultiFolds(train_data_raw$fake, k = 10, times = 3)
+# cv_control <- trainControl(method = "repeatedcv", number = 10,
+#                            repeats = 3, index = cv_folds,
+#                            savePredictions = "final",
+#                            classProbs = TRUE)
+# randomforest_res_ngrams <- train(make.names(fake) ~ ., data = train_data, method = "rf",
+#                                  trControl = cv_control, tuneLength = 7, importance = TRUE)
+# 
+# #RF only for liwc
+# train_data <- train_data_liwc
+# cv_folds <- createMultiFolds(train_data_raw$fake, k = 10, times = 3)
+# cv_control <- trainControl(method = "repeatedcv", number = 10,
+#                            repeats = 3, index = cv_folds,
+#                            savePredictions = "final",
+#                            classProbs = TRUE)
+# randomforest_res_liwc <- train(make.names(fake) ~ ., data = train_data, method = "rf",
+#                                trControl = cv_control, tuneLength = 7, importance = TRUE)
 
 
 
@@ -287,9 +287,16 @@ randomForest::varImpPlot(randomforest_res$finalModel)
 # means it will rise my false negatives. In this academic context, a genuine 
 # review classified as fake is more hurtful than the a fake review classified 
 # as genuine. the ROC will help choose a threshold.
-eval <- MLeval::evalm(list(randomforest_res, randomforest_res_ngrams, 
-                           randomforest_res_liwc, glm_res), 
-                      gnames = c("rf", "rf_ngrams", "rf_liwc", "glm"))
+eval <- MLeval::evalm(list(randomforest_res
+                           # randomforest_res_ngrams, 
+                           # randomforest_res_liwc, 
+                           # glm_res
+                           ), 
+                      gnames = c("rf" 
+                                 # "rf_ngrams", 
+                                 # "rf_liwc", 
+                                 # "glm"
+                                 ))
 
 eval$roc
 eval$prg
@@ -416,7 +423,7 @@ test_result <-
   test_data %>% 
   modelr::add_predictions(randomforest_res, type = "prob") %>%
   as_tibble() %>% 
-  mutate(predicted_fake = ifelse(pred$TRUE. > 0.75, TRUE, FALSE)) %>% 
+  mutate(predicted_fake = ifelse(pred$TRUE. > 0.7, TRUE, FALSE)) %>% 
   select(fake, predicted_fake)
 
 confusionMatrix(as.factor(test_result$predicted_fake), test_result$fake)
@@ -447,4 +454,3 @@ test_result <-
   select(fake, predicted_fake)
 
 confusionMatrix(as.factor(test_result$predicted_fake), test_result$fake)
-

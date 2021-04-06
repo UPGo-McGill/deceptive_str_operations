@@ -13,17 +13,18 @@ params:
 
 
 ```{r setup, include = FALSE}
-knitr::opts_chunk$set(fig.align = 'center', echo = TRUE)
 
-```
-
-```{r data, include = FALSE}
 library(here)
 source(here("R", "01_source.R"))
 
-load(here("output", "str_processed.Rdata"))
-load(here("output", "review_processed.Rdata"))
-load(here("output", "fake_reviews_uc.Rdata"))
+# Function for checking file modifications
+mtime <- function(files) lapply(Sys.glob(files), function(x) file.info(x)$mtime)
+
+knitr::opts_chunk$set(echo = FALSE)
+knitr::opts_chunk$set(include = FALSE)
+knitr::opts_chunk$set(message = FALSE)
+knitr::opts_chunk$set(warning = FALSE)
+
 
 geography <- cancensus::get_census(dataset = "CA16",
                       regions = list(CSD = c(2466023)),
@@ -33,7 +34,9 @@ geography <- cancensus::get_census(dataset = "CA16",
 
 ```
 # Review overview
-```{r review_overview, include = FALSE}
+```{r review_overview, cache = TRUE, cache.lazy = FALSE, cache.extra = mtime(here("output", "review_processed.Rdata"))}
+
+load(here("output", "review_processed.Rdata"))
 
 date_first_review <- 
   review %>% 
@@ -52,6 +55,7 @@ nb_reviews <-
   nrow() %>% 
   prettyNum(",")
   
+rm(review_text, review_user)
   
 ```
 
@@ -60,7 +64,10 @@ The first review on Airbnb, in `r params$geo` is dated from `r date_first_review
 ## Review location
 
 Here is a heat map of all reviews let during the period mentioned above. No surprise, most of the reviews reviews were let in the central part of the city, where there is also a greater percentage of STR. 
-```{r plot_reviews, echo = FALSE, warning = FALSE}
+```{r plot_reviews, include = TRUE, cache = TRUE, cache.lazy = FALSE, cache.extra = mtime(here("output", "str_processed.qsm"))}
+
+qload(here("output", "str_processed.qsm"),
+      nthreads = parallel::detectCores()-1)
 
 # Add a geometry to each review
 review_geometry <- 
@@ -92,11 +99,16 @@ review_geometry %>%
                         labels = scales::percent)+
   theme_void()
   
+rm(property, daily)
 ```
 
 # Fake review identification
 
-```{r fake_review_identification, include = FALSE}
+```{r fake_review_identification, cache = TRUE, cache.lazy = FALSE, cache.extra = mtime(here("output", "fake_reviews_uc.Rdata"))}
+
+load(here("output", "fake_reviews_uc.Rdata"))
+qload(here("output", "str_processed.qsm"),
+      nthreads = parallel::detectCores()-1)
 
 fake_reviews <- 
   fake_reviews_uc %>% #later, the ones from the model will be added too
@@ -123,7 +135,7 @@ nb_fake_reviews_uc <-
 #   nrow()
 
 
-
+rm(property, daily)
 ```
 
 In `r params$geo`, we identified a total of `r nb_fake_reviews` fake reviews. A two-fold operation was made to get to this number. The first step was to identify, with the digital footprint of every account on Airbnb, which review was potentially fraudulent when looking at the user-centric aspect of each of them. We decided of four different characteristics; if a review fell into at least one of those, we flagged it as potentially fraudulent.
@@ -153,7 +165,7 @@ Having these two sets of reviews (fake and genuine) allowed us to fit a random f
 
 For the location of fake reviews, it is no surprise that the vast majority of them are located in the central part of the city. A notable difference with the plot showing all reviews is that there are virtually no fake reviews outside of the central part of the city.
 
-```{r fake_review_location, echo = FALSE, warning = FALSE}
+```{r fake_review_location, include = TRUE, echo = FALSE, warning = FALSE}
 
 fake_reviews <- 
   fake_reviews_uc %>% #later, the ones from the model will be added too
@@ -177,7 +189,11 @@ review_geometry %>%
 ```
 ### Fake review and commercial operations
 
-```{r fake_review_commercial_operations, include = FALSE}
+```{r fake_review_commercial_operations, cache = TRUE, cache.lazy = FALSE, cache.extra = mtime(here("output", "str_processed.qsm"))}
+
+qload(here("output", "str_processed.qsm"),
+      nthreads = parallel::detectCores()-1)
+
 
 date_first_property_scrape <- 
   property %>%
@@ -210,12 +226,17 @@ commercial_fake_reviewed <-
   mutate(per = scales::percent(n/sum(n), accuracy = 0.1),
          n = prettyNum(n, ","))
 
+rm(property, daily)
+
 ```
 We have information about every property listing in `r params$geo` available for web scrape between `r date_first_property_scrape` and `r date_last_property_scrape`. With these information, we identified which entire-home listing were at least once in their lifetime flagged as commercial operations (either multilisting of a frequently rented entire home listing). Out of the `r nb_fake_reviews_eh` fake reviews let in entire homes, `r commercial_fake_reviewed[2,2]` (`r commercial_fake_reviewed[2,3]`) were let in commercial listings. Fraudulent reviewing is a behavior of commercial hosts, which is in line with the literature on the subject. 
 
 ### Fake reviews impact on a listing's success
 
-```{r fake_review_impacts, echo = FALSE, warning = FALSE, message = FALSE}
+```{r fake_review_impacts, include = TRUE, cache = TRUE, cache.lazy = FALSE, cache.extra = mtime(here("output", "str_processed.qsm"))}
+
+qload(here("output", "str_processed.qsm"),
+      nthreads = parallel::detectCores()-1)
 
 fake_reviewed_properties <- 
   review %>% 
@@ -258,10 +279,15 @@ rev_impacts_matrice_indexed %>%
   xlab(NULL)+
   ylab("Percentage of reserved active days")
 
-```
-Previously is a figure presenting the percentage of reserved days out of all active days (either available or active) during the month prior to a fake review, the month of the review, and a month after it. On average, a fake review is let during a month of lower percentage of reserved active days compared to the precedent, but only in a marginal manner (difference of only `r scales::percent(pull(rev_impacts_matrice_indexed[2,2] - rev_impacts_matrice_indexed[3,2]), accuracy = 0.1)`). There is a significant spike for this statistic the month following a fake review, which passes from `r scales::percent(pull(rev_impacts_matrice_indexed[2,2]), accuracy = 0.1)` to `r scales::percent(pull(rev_impacts_matrice_indexed[1,2])`, accuracy = 0.1), a difference of `r scales::percent(pull(rev_impacts_matrice_indexed[1,2] - rev_impacts_matrice_indexed[2,2]), accuracy = 0.1)`. 
+rm(property, daily)
 
-```{r fake_review_by_month_impacts, echo = FALSE, warning = FALSE}
+```
+Previously is a figure presenting the percentage of reserved days out of all active days (either available or active) during the month prior to a fake review, the month of the review, and a month after it. On average, a fake review is let during a month of lower percentage of reserved active days compared to the precedent, but only in a marginal manner (difference of only `r scales::percent(pull(rev_impacts_matrice_indexed[2,2] - rev_impacts_matrice_indexed[3,2]), accuracy = 0.1)`). There is a significant spike for this statistic the month following a fake review, which passes from `r scales::percent(pull(rev_impacts_matrice_indexed[2,2]), accuracy = 0.1)` to `r scales::percent(pull(rev_impacts_matrice_indexed[1,2]), accuracy = 0.1)`, a difference of `r scales::percent(pull(rev_impacts_matrice_indexed[1,2] - rev_impacts_matrice_indexed[2,2]), accuracy = 0.1)`. 
+
+```{r fake_review_by_month_impacts, include = TRUE, cache = TRUE, cache.lazy = FALSE, cache.extra = mtime(here("output", "str_processed.qsm"))}
+
+qload(here("output", "str_processed.qsm"),
+      nthreads = parallel::detectCores()-1)
 
 fake_review_impacts_months <- 
   rev_impacts_matrice %>% 
@@ -340,6 +366,8 @@ fake_review_impacts_months %>%
 # i should take, for every listing, the variation of percentage of reserved active days from the month of the fake review to the next. 
 
 # Should the graph have 12 lines monitoring activity from 0 to 12 months? And then we have a greater picture of before and after fake review depending of the month.
+
+rm(property, daily)
 
 ```
 Commercial listings who forge reviews have a higher percentage of reserved active days. The first two months of a listing is where the growth from month to month is the highest: listings gained reputation and with enough ratings and reviews, more reservations come. This is a normal characteristics of every listings. However, in the first two months of operation, listings who faked reviews had much higher percentage of reserved days. Fake reviewing during the first two months of operation seems to be very advantageous: they alleviate the problem of cold start, when a listing has no reviews so has a harder time to get reserved. The vertical distance between the fake reviewed listings' lines and the rest of the commercial listings shows the advantage of this fraudulent behavior.

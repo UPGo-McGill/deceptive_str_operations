@@ -4,7 +4,8 @@ source("R/01_source.R")
 # Load data ---------------------------------------------------------------
 
 load("output/review_processed.Rdata")
-load("output/str_processed.Rdata")
+qload("output/str_processed.qsm",
+      nthreads = parallel::detectCores()-1)
 
 
 # Matrix creation --------------------------------------------------------
@@ -51,16 +52,16 @@ multiple_reviews_same_host <-
   matrice %>% 
   count(user_ID, host_ID, sort = T) %>% 
   filter(n>2) %>%
-  inner_join(matrice, by = c("user_ID", "host_ID")) %>% 
+  inner_join(matrice, by = c("user_ID", "host_ID")) %>%
   pull(review_ID)
 
 # a user/network letting the same reviews at multiple places
-same_review <- ### Maybe excluding one-word or two-words review a good idea?
+same_review <-
   review_text %>% 
   count(user_ID, review, sort=T) %>% 
   filter(n>2) %>% # There seems to have an issue on Airbnb's side with double up
                   # reviews. 
-  inner_join(review_text, by = c("user_ID", "review")) %>% 
+  inner_join(review_text, by = c("user_ID", "review")) %>%
   pull(review_ID)
 
 # identifying which are the potential fake reviews vs genuine
@@ -130,18 +131,29 @@ genuine_reviews <-
 # Both fake and genuine text reviews in one dataframe, using random undersampling. 
 # I should think about trying oversampling, or cost-sensitive classification
 classified_texts <-
-  rbind(fake_reviews_uc, sample_n(genuine_reviews, nrow(fake_reviews_uc))) %>%  # My issue here is that I have way more
-                                                                          # "genuine" than "fake" reviews
-  mutate(fake = as.factor(fake))
+  rbind(fake_reviews_uc, genuine_reviews) %>%  #sample_n(genuine_reviews, nrow(fake_reviews_uc)*3)) %>%  
+                                                      # My issue here is that I have way more
+                                                      # "genuine" than "fake" reviews. I keep a 90%/10% ratio
+  mutate(fake = as.factor(fake)) %>% 
+  distinct(review, .keep_all=T) # duplicated reviews are worth more if we let them in the training dataset
 
 # Visualize the two classes
 classified_texts %>% 
   mutate(text_length = nchar(review)) %>% 
   ggplot()+
-  geom_density(aes(text_length, fill = fake), binwidth = 10, alpha = 0.5)
+  geom_density(aes(text_length, fill = fake), alpha = 0.5)+
+  xlim(c(1,1000))
 # fake reviews are usually smaller in character length
+
+# Commercial, FREH_3, FREH, ?
+classified_texts %>% 
+  left_join(select(review, review_ID, property_ID)) %>% 
+  left_join(select(st_drop_geometry(property), property_ID, FREH)) %>% 
+  group_by(fake) %>% 
+  count(FREH) %>% 
+  mutate(perc = n/sum(n))
 
 # Save --------------------------------------------------------------------
 
-save(classified_texts, file = "output/classified_texts.Rdata")
-save(fake_reviews_uc, file = "output/fake_reviews_uc.Rdata")
+qsave(classified_texts, file = "output/classified_texts.qs")
+qsave(fake_reviews_uc, file = "output/fake_reviews_uc.qs")

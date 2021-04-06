@@ -3,7 +3,7 @@
 source("R/01_source.R")
 # library(googleLanguageR)
 
-load("data/review.Rdata")
+load("data/review_mtl.Rdata")
 
 
 # Which package seems best to detect text language ------------------------
@@ -143,7 +143,16 @@ review_text <-
   review_text %>%
   filter(lengths(str_split(review, " ")) > 4)
 
+review <- 
+  review %>% 
+  filter(review_ID %in% review_text$review_ID)
+
+review <- 
+  review %>% 
+  filter(user_ID %in% review_text$user_ID)
+
 
 # Save every reviews in English -------------------------------------------
 
-save(review, review_text, review_user, file = "output/review_processed.Rdata")
+qsavem(review, review_text, review_user, file = "output/review_processed.qsm",
+       nthreads = parallel::detectCores()-1)

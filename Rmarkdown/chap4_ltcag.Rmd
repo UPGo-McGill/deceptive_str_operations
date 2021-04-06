@@ -34,11 +34,56 @@ geography <- cancensus::get_census(dataset = "CA16",
 
 ```
 
+# Overview of istings that come and go
+
+With an image recognition software developed by Prof. David Wachsmuth, we associate deleted listings with active listings if they use the same photo of a unit at different moments in time. A host can delete a listing and create a new one to wipe out possible bad reviews or ratings, and restart with a clean slate. This actively betray users' trust on a platform of the sharing economy, based on auto-regulation via reviews and ratings (Maybe I can make a link to Lou's SRP about high-scale low-effort hosts which I believe to be the ones operating this kind of shenanigans). We suspect that more listings were taking down and brought back up, but weren't recycling the exact same photos. This is why we consider the number of listings we matched to be a lower bound for the number of unique housing units that used this technique.
+
+```{r host_networks_overview, cache = TRUE, cache.lazy = FALSE, cache.extra = mtime(here("output", "review_processed.Rdata"))}
+
+qload(here("output", "str_processed.qsm"),
+      nthreads = parallel::detectCores()-1)
+
+nb_properties <- 
+  property %>% nrow()
+
+initial_listings_scraped <- 
+  property %>% 
+  st_drop_geometry() %>% 
+  unnest(all_PIDs) %>%
+  distinct(all_PIDs) %>% 
+  filter(!all_PIDs %in% property$property_ID) %>% nrow() +
+  nrow(property)
+
+properties_w_old_PIDs <- 
+property %>% 
+  st_drop_geometry() %>% 
+  filter(all_PIDs != "NULL") %>% 
+  nrow()
+
+properties_w_old_PIDs_per <- 
+{properties_w_old_PIDs /
+  nrow(property)} %>% scales::percent(accuracy = 0.1)
+
+with_old_PIDs_and_commercial <- 
+property %>% 
+  st_drop_geometry() %>% 
+  mutate(with_PIDs = ifelse(all_PIDs != "NULL", TRUE, FALSE)) %>% 
+  count(with_PIDs, commercial) %>% 
+  group_by(with_PIDs) %>% 
+  mutate(per = scales::percent(n/sum(n), accuracy = 0.1)) %>% 
+  filter(commercial == TRUE)
+
+
+rm(property, daily)
+```
+
+In `r params$geo`, out of `r nb_properties` unique properties, there initially were `r initial_listings_scraped` listings scraped on Airbnb and it is `r properties_w_old_PIDs_per` (`r properties_w_old_PIDs`) of all unique properties that had one or many previous listings. Moreover, we identified that the listings taking part in this technique are more likely to be used commercially. Indeed, `r with_old_PIDs_and_commercial[2,4]` of these listings were identified as commercial, while the figure is `r with_old_PIDs_and_commercial[1,4]` for the listings that weren't caught using this technique.
+
 # Host networks overview
 
 A network of hosts is created when an account (a unique host ID) uses a listing photo also used by another listing of a different account, at a different moment in time. In this case, we regroup all listings of the two accounts under the same host ID. Multiple listings of the same account can match to an unlimited amount of different accounts that can also operate listings in other cities, which possibly have listings that match to other listings of other accounts. It can, in some cases, lead to the creation of a vast array of listings and accounts, regrouped under one single network of host, one host ID.
 
-```{r host_networks_overview, cache = TRUE, cache.lazy = FALSE, cache.extra = mtime(here("output", "review_processed.Rdata"))}
+```{r ltcag_overview, cache = TRUE, cache.lazy = FALSE, cache.extra = mtime(here("output", "str_processed.qsm"))}
 
 qload(here("output", "str_processed.qsm"),
       nthreads = parallel::detectCores()-1)
@@ -106,7 +151,7 @@ rm(property, daily)
 In `r params$geo`, we identified a total of `r length(host_networks)` host networks which are regrouping `r old_hosts` accounts, while the amount of hosts that are not part of a network is `r nb_host_by_group[1,2]`. These networks were operating `r listings_owned_by_group[2,2]` listings since the 1st of January 2020, which was almost a third (`r listings_owned_by_group[2,3]`) of the total active listings. 
 
 
-```{r per_network_listings1, cache = TRUE, cache.lazy = FALSE, cache.extra = mtime(here("output", "review_processed.Rdata"))}
+```{r per_network_listings1, cache = TRUE, cache.lazy = FALSE, cache.extra = mtime(here("output", "str_processed.qsm"))}
 
 p1 <- host_group %>% 
   ggplot()+

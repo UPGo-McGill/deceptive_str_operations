@@ -38,7 +38,7 @@ ngrams_train_dfm <-
 ngrams_dfm_trimed <- 
   ngrams_train_dfm %>% 
   # trim because it's too large, with my memory, to convert in matrix! 
-  dfm_trim(min_docfreq = 1, min_termfreq = 15)
+  dfm_trim(min_docfreq = 1, min_termfreq = 10)
 
 # Look at sparsity (% of cells being 0). If it's too high, ultimately I won't
 # be able to convert my dfm to a matrix
@@ -175,9 +175,12 @@ model <- MASS::lda(fake~., data = train.data)
 # plot(model)
 # 
 # lda.data <- cbind(test.data_2, predict(model, test.data_2)$x)
-# ggplot(lda.data, aes(LD1)) +
+# lda.data %>% 
+#   # mutate(LD1 = abs(LD1) * LD1) %>% # equivalent of ^2 but keeping sign
+#   ggplot(aes(LD1)) +
 #   geom_density(aes(fill = fake), alpha = 0.4)+
-#   scale_fill_manual(values=c("#FFFF00", "#00FFFF"))
+#   scale_fill_manual(values=c("#FFFF00", "#00FFFF")) #+
+#   # xlim(-7,7)
 # 
 # cbind(fake = as.logical(test.data_2$fake),
 #       predict = as.logical(predictions$class)) %>% 
@@ -222,9 +225,12 @@ review_text_3 <-
   slice(((nrow(review_text)/3)*2 +1):nrow(review_text))
 
 
+
+# Review_text_1 -----------------------------------------------------------
+
 ngrams_pop_dfm <-  
   #tokenization
-  tokens(review_text_3$review, what = "word", remove_punct = T, 
+  tokens(review_text_1$review, what = "word", remove_punct = T, 
          remove_symbols = T, 
          remove_numbers = T, 
          remove_separators = T) %>% 
@@ -307,6 +313,233 @@ liwc_results_test_data <-
      rename(review_ID = A,
             review = B))[-1,] %>% 
   mutate(review_ID = as.numeric(review_ID)) %>% 
+  filter(review_ID %in% review_text_1$review_ID) %>% 
+  select(review_ID, WC, WPS, Authentic, Analytic,  Tone, Exclam, #  Linguistic processes
+         function., ppron, i, we, shehe, they, adj, # Function words
+         affect, posemo, negemo, # Psychological processes - emotional
+         social, family, friend, female, male, # Psychological processes - social
+         cogproc, insight, cause, discrep, tentat, certain, differ, # Psychological processes - cognitive
+         time, focuspast, focuspresent, focusfuture, space, relativ, # Psychological processes - time and space
+         percept, see, hear, feel, # Psychological processes - perceptual
+         bio, body, health, sexual, ingest, # Psychological processes - biological
+         work, leisure, home, money, relig) # Personal concerns
+
+ngrams_pop_liwc <- 
+  data.frame(review_ID = review_text_1$review_ID,
+             ngrams_pop_svd) %>% 
+  inner_join(liwc_results_test_data, by = "review_ID") %>% 
+  select(-review_ID)
+
+# predict
+predictions <- model %>% predict(ngrams_pop_liwc)
+
+review_text_1 <- 
+review_text_1 %>% 
+  inner_join(predictions %>% as.tibble() %>% select(x) %>% 
+              cbind(select(review_text_1, review_ID)), by= "review_ID")
+
+
+# Review_text_2 -----------------------------------------------------------
+
+ngrams_pop_dfm <-  
+  #tokenization
+  tokens(review_text_2$review, what = "word", remove_punct = T, 
+         remove_symbols = T, 
+         remove_numbers = T, 
+         remove_separators = T) %>% 
+  # removing stopwords like "the", "a", "an", etc. from tidytext package
+  tokens_select(stop_words$word, selection = "remove") %>% 
+  # words stemming
+  tokens_wordstem(language = "english") %>% 
+  # making bigrams
+  # tokens_ngrams(n = 2) %>%
+  # to document-feature matrix
+  dfm() 
+
+ngrams_pop_dfm_trimed <- 
+  ngrams_pop_dfm %>% 
+  # trim if needed
+  dfm_trim(min_docfreq = 1, min_termfreq = 1)
+
+ncol(ngrams_pop_dfm_trimed)
+
+
+# make sure train and pop data fit it in the same vector space, and convert
+# it to matrix for next steps
+ngrams_pop <- 
+  dfm_select(ngrams_pop_dfm_trimed, pattern = ngrams_dfm_trimed,
+             selection = "keep") %>% 
+  as.matrix()
+
+# projecting the pop data into the same tf-idf vector space of the training data
+# normalize all documents with term frequency
+ngrams_pop_tf <- apply(ngrams_pop, 1, 
+                       function(row) row/sum(row))
+
+# calculate TF-IDF with the training data's idf, to keep same vector space
+ngrams_pop_tfidf <-  apply(ngrams_pop_tf, 2, 
+                           function(x, idf) x * idf, idf = ngrams_idf)
+
+# transpose the matrix
+ngrams_pop_tfidf <- t(ngrams_pop_tfidf)
+
+# check and fix incomplete cases
+incomplete_cases <- which(!complete.cases(ngrams_pop_tfidf))
+ngrams_pop_tfidf[incomplete_cases,] <- rep(0.0, ncol(ngrams_pop_tfidf))
+
+# double check
+dim(ngrams_tfidf) - dim(ngrams_pop_tfidf) # second number = 0 means same nb of columns
+
+
+# the pop data is in the same tf-idf vector space as the training data, so we
+# can project it with the same svd (prepare higher in the script with the
+# training data)
+ngrams_pop_svd <- t(sigma_inverse * u_transpose %*% t(ngrams_pop_tfidf))
+
+
+# create the pop data frame and calculate fake_similarity (# now because it led
+# to overfitting)
+ngrams_pop_svd <- as_tibble(ngrams_pop_svd)
+# ngrams_pop_similarities <- rbind(ngrams_pop_svd, ngrams_train_svd[fake_indexes,])
+# ngrams_pop_similarities <- lsa::cosine(t(ngrams_pop_similarities))
+# 
+# ngrams_pop_svd <- 
+# ngrams_pop_svd %>% 
+#   mutate(fake_similarity = as.numeric(0))
+# 
+# fake_cols_train_data <- (nrow(ngrams_pop_svd) + 1):ncol(ngrams_pop_similarities)
+# 
+# for(i in 1:nrow(ngrams_pop_svd)) {
+#   # The following line has the bug fix.
+#   ngrams_pop_svd$fake_similarity[i] <- mean(ngrams_pop_similarities[i, fake_cols_train_data])  
+# }
+# 
+# 
+# # if there are issues as result of stopword removal or something, fix it to 0.
+# ngrams_pop_svd$fake_similarity[!is.finite(ngrams_pop_svd$fake_similarity)] <- 0
+
+
+# addition of liwc
+liwc_results_test_data <- 
+  (read.csv("output/liwc2015_results.csv", dec = ",") %>% 
+     as_tibble() %>% 
+     rename(review_ID = A,
+            review = B))[-1,] %>% 
+  mutate(review_ID = as.numeric(review_ID)) %>% 
+  filter(review_ID %in% review_text_2$review_ID) %>% 
+  select(review_ID, WC, WPS, Authentic, Analytic,  Tone, Exclam, #  Linguistic processes
+         function., ppron, i, we, shehe, they, adj, # Function words
+         affect, posemo, negemo, # Psychological processes - emotional
+         social, family, friend, female, male, # Psychological processes - social
+         cogproc, insight, cause, discrep, tentat, certain, differ, # Psychological processes - cognitive
+         time, focuspast, focuspresent, focusfuture, space, relativ, # Psychological processes - time and space
+         percept, see, hear, feel, # Psychological processes - perceptual
+         bio, body, health, sexual, ingest, # Psychological processes - biological
+         work, leisure, home, money, relig) # Personal concerns
+
+ngrams_pop_liwc <- 
+  data.frame(review_ID = review_text_2$review_ID,
+             ngrams_pop_svd) %>% 
+  inner_join(liwc_results_test_data, by = "review_ID") %>% 
+  select(-review_ID)
+
+# predict
+predictions <- model %>% predict(ngrams_pop_liwc)
+
+review_text_2 <- 
+  review_text_2 %>% 
+  inner_join(predictions %>% as.tibble() %>% select(x) %>% 
+               cbind(select(review_text_2, review_ID)), by= "review_ID")
+
+
+
+# Review_text_3 -----------------------------------------------------------
+
+ngrams_pop_dfm <-  
+  #tokenization
+  tokens(review_text_3$review, what = "word", remove_punct = T, 
+         remove_symbols = T, 
+         remove_numbers = T, 
+         remove_separators = T) %>% 
+  # removing stopwords like "the", "a", "an", etc. from tidytext package
+  tokens_select(stop_words$word, selection = "remove") %>% 
+  # words stemming
+  tokens_wordstem(language = "english") %>% 
+  # making bigrams
+  # tokens_ngrams(n = 2) %>%
+  # to document-feature matrix
+  dfm() 
+
+ngrams_pop_dfm_trimed <- 
+  ngrams_pop_dfm %>% 
+  # trim if needed
+  dfm_trim(min_docfreq = 1, min_termfreq = 1)
+
+ncol(ngrams_pop_dfm_trimed)
+
+
+# make sure train and pop data fit it in the same vector space, and convert
+# it to matrix for next steps
+ngrams_pop <- 
+  dfm_select(ngrams_pop_dfm_trimed, pattern = ngrams_dfm_trimed,
+             selection = "keep") %>% 
+  as.matrix()
+
+# projecting the pop data into the same tf-idf vector space of the training data
+# normalize all documents with term frequency
+ngrams_pop_tf <- apply(ngrams_pop, 1, 
+                       function(row) row/sum(row))
+
+# calculate TF-IDF with the training data's idf, to keep same vector space
+ngrams_pop_tfidf <-  apply(ngrams_pop_tf, 2, 
+                           function(x, idf) x * idf, idf = ngrams_idf)
+
+# transpose the matrix
+ngrams_pop_tfidf <- t(ngrams_pop_tfidf)
+
+# check and fix incomplete cases
+incomplete_cases <- which(!complete.cases(ngrams_pop_tfidf))
+ngrams_pop_tfidf[incomplete_cases,] <- rep(0.0, ncol(ngrams_pop_tfidf))
+
+# double check
+dim(ngrams_tfidf) - dim(ngrams_pop_tfidf) # second number = 0 means same nb of columns
+
+
+# the pop data is in the same tf-idf vector space as the training data, so we
+# can project it with the same svd (prepare higher in the script with the
+# training data)
+ngrams_pop_svd <- t(sigma_inverse * u_transpose %*% t(ngrams_pop_tfidf))
+
+
+# create the pop data frame and calculate fake_similarity (# now because it led
+# to overfitting)
+ngrams_pop_svd <- as_tibble(ngrams_pop_svd)
+# ngrams_pop_similarities <- rbind(ngrams_pop_svd, ngrams_train_svd[fake_indexes,])
+# ngrams_pop_similarities <- lsa::cosine(t(ngrams_pop_similarities))
+# 
+# ngrams_pop_svd <- 
+# ngrams_pop_svd %>% 
+#   mutate(fake_similarity = as.numeric(0))
+# 
+# fake_cols_train_data <- (nrow(ngrams_pop_svd) + 1):ncol(ngrams_pop_similarities)
+# 
+# for(i in 1:nrow(ngrams_pop_svd)) {
+#   # The following line has the bug fix.
+#   ngrams_pop_svd$fake_similarity[i] <- mean(ngrams_pop_similarities[i, fake_cols_train_data])  
+# }
+# 
+# 
+# # if there are issues as result of stopword removal or something, fix it to 0.
+# ngrams_pop_svd$fake_similarity[!is.finite(ngrams_pop_svd$fake_similarity)] <- 0
+
+
+# addition of liwc
+liwc_results_test_data <- 
+  (read.csv("output/liwc2015_results.csv", dec = ",") %>% 
+     as_tibble() %>% 
+     rename(review_ID = A,
+            review = B))[-1,] %>% 
+  mutate(review_ID = as.numeric(review_ID)) %>% 
   filter(review_ID %in% review_text_3$review_ID) %>% 
   select(review_ID, WC, WPS, Authentic, Analytic,  Tone, Exclam, #  Linguistic processes
          function., ppron, i, we, shehe, they, adj, # Function words
@@ -328,9 +561,9 @@ ngrams_pop_liwc <-
 predictions <- model %>% predict(ngrams_pop_liwc)
 
 review_text_3 <- 
-review_text_3 %>% 
+  review_text_3 %>% 
   inner_join(predictions %>% as.tibble() %>% select(x) %>% 
-              cbind(select(review_text_3, review_ID)), by= "review_ID")
+               cbind(select(review_text_3, review_ID)), by= "review_ID")
 
 
 # bind the predictions df and save it
