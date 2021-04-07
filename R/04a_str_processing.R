@@ -46,6 +46,14 @@ for(i in 1:nrow(properties_to_discard)) {
 rm(to_discard, properties_to_discard)
 
 
+# Filter out properties that seems to be a lag ----------------------------
+
+property <- 
+property %>% 
+  filter(!(host_ID == "108156815" & created == "2019-12-13" &
+           scraped == "2019-12-27"))
+
+
 # Filter daily and host considering changes above -------------------------
 
 daily <-
@@ -251,6 +259,17 @@ property %>%
                           nrow())) %>% 
   ungroup()
     
+
+
+# Column if property was part of a match at all ---------------------------
+
+property <- 
+property %>% 
+  rowwise() %>% 
+  mutate(matched = (matches %>% 
+                      filter(x_pid == property_ID | y_pid == property_ID) %>% 
+                      nrow())) %>% 
+  ungroup()
 
 # Commercial listing column added to property -----------------------------
 library(strr)
