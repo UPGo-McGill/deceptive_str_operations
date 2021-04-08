@@ -25,25 +25,10 @@ property <-
 
 # Filter out cities with same city name in different states ---------------
 
-properties_to_discard <- 
-  property %>% 
-  group_by(city) %>% 
-  count(region, sort=T) %>%
-  filter(n<100)
-
-for(i in 1:nrow(properties_to_discard)) {
-  
-  to_discard <- 
-    property %>% 
-    filter(city == pull(properties_to_discard[i,1]) & region == pull(properties_to_discard[i,2]))
-  
-  property <- 
-    property %>% 
-    filter(!property_ID %in% to_discard$property_ID)
-  
-}
-
-rm(to_discard, properties_to_discard)
+property <- 
+property %>% 
+  group_by(region, city) %>% 
+  filter(n()>100)
 
 
 # Filter out properties that seems to be a lag ----------------------------
