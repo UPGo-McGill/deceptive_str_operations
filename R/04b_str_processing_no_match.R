@@ -44,6 +44,13 @@ for(i in 1:nrow(properties_to_discard)) {
 rm(to_discard, properties_to_discard)
 
 
+# Filter out properties that seems to be a lag ----------------------------
+
+property_nm <- 
+  property_nm %>% 
+  filter(!(host_ID == "108156815" & created == "2019-12-13" &
+             scraped == "2019-12-27"))
+
 # Filter daily_nm and host considering changes above -------------------------
 
 daily_nm <-

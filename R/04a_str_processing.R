@@ -28,7 +28,8 @@ property <-
 property <- 
 property %>% 
   group_by(region, city) %>% 
-  filter(n()>100)
+  filter(n()>100) %>% 
+  ungroup()
 
 
 # Filter out properties that seems to be a lag ----------------------------
