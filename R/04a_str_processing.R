@@ -244,10 +244,9 @@ property %>%
                                    y_pid %in% unlist(all_PIDs)) %>% 
                           nrow())) %>% 
   ungroup()
-    
 
 
-# Column if property was part of a match at all ---------------------------
+# Column for how many times it matched ------------------------------------
 
 property <- 
 property %>% 
@@ -257,6 +256,16 @@ property %>%
                       nrow())) %>% 
   ungroup()
 
+
+# How many host accounts in the network -----------------------------------
+
+host_networks <- 
+property %>% 
+  group_by(host_ID) %>% 
+  count(old_host) %>% 
+  summarize(nb_old_hosts = n()) %>%
+  ungroup()
+  
 # Commercial listing column added to property -----------------------------
 library(strr)
 
@@ -286,8 +295,7 @@ property <-
                                             distinct(property_ID) %>% 
                                             pull(property_ID)), T, F))
 
-# atm there is everything except section -- Column if same photo used in different cities
-# qsavem(property, daily, host, file = "output/str_processed.qsm")
+
 # Save data ---------------------------------------------------------------
 
 qsave(property, file = "output/property.qs",
@@ -297,4 +305,7 @@ qsave(daily, file = "output/daily.qs",
       nthreads = parallel::detectCores())
 
 qsave(FREH, file = "output/FREH.qs",
+      nthreads = parallel::detectCores())
+
+qsave(host_networks, file = "output/host_networks.qs",
       nthreads = parallel::detectCores())

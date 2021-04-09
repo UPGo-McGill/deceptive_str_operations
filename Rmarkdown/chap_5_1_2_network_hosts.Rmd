@@ -1,0 +1,248 @@
+---
+title: "Chap. 5.1.2"
+header-includes:
+   - \usepackage[default]{sourcesanspro}
+mainfont: sourcesanspro
+author: "Max"
+date: "`r format(Sys.time(), '%B %Y')`"
+output: html_document
+---
+
+```{r setup, include = FALSE}
+
+knitr::opts_chunk$set(echo = FALSE)
+knitr::opts_chunk$set(include = FALSE)
+knitr::opts_chunk$set(message = FALSE)
+knitr::opts_chunk$set(warning = FALSE)
+
+library(here)
+source(here("R", "01_source.R"))
+
+property <- qread(here("output", "property.qs"), parallel::detectCores())
+property_nm <- qread(here("output", "property_nm.qs"), parallel::detectCores())
+matches <- qread(here("output", "matches.qs"), parallel::detectCores())
+
+```
+
+# Networks of hosts 
+
+There are cases where the housing unit is not re-listed by the same host account. Therefore, we nested all accounts listing the same housing units under one network. This can lead to the creation of vast networks of hosts. As an example, in a previous report prepared by UPGo and submitted to Projet Montreal, we identified, in Montreal, a specific network of hosts whose 880 listings earned approximately $12.9 million in 2019. An investigation into a sample of the host accounts which make up this network suggests links between several prominent property management companies in Montreal—notably a cluster of co-ownership and shared employees among realty companies and various short-term rental brands.
+
+```{r first_overview}
+
+nb_before_hosts <- 
+  property_nm %>% 
+  distinct(host_ID) %>% 
+  nrow() %>% 
+  prettyNum(",")
+
+nb_networks <- 
+  property %>% 
+  distinct(host_ID) %>% 
+  nrow() %>% 
+  prettyNum(",")
+
+nb_networks_more_50 <- 
+  property %>% 
+  count(host_ID, sort=T) %>%
+  filter(n>=50) %>% 
+  nrow() %>% 
+  prettyNum(",")
+
+networks_size <- 
+  property %>% 
+  count(host_ID, sort=T) 
+
+nb_properties_big_network <- 
+  networks_size %>%
+  slice(1) %>% 
+  pull(n) %>% 
+  prettyNum(",")
+
+
+```
+
+In this research project, the previous `r nb_before_hosts` distinct host accounts were nested into `r nb_networks` networks of hosts. For the sake of simplicity, from here on we will refer to host networks when we talk about these `r nb_networks`, even for accounts that are not part of networks. If two different host accounts posted listings with identical or nearly-identical photos in the same city, then we considered the owner was the same individual, or the same operation. We uncovered `r nb_networks_more_50` networks that operated more than 50 listings anywhere in the 10 largest STR market in North America. The biggest network posted `r nb_properties_big_network` listings since November 2009.
+
+```{r biggest_network}
+
+times_bigger_than_second <- 
+round(pull(networks_size[1,2])/pull(networks_size[2,2]))
+
+second_network_size <- 
+  networks_size %>%
+  slice(2) %>% 
+  pull(n) %>% 
+  prettyNum(",")
+
+big_network_old_host <- 
+property %>% 
+  filter(host_ID == pull(networks_size[1,1])) %>% 
+  count(old_host, sort=T) 
+
+nb_old_hosts_big_network <- 
+  big_network_old_host %>% 
+  nrow() %>% 
+  prettyNum(",")
+
+big_network_hosts_more_100_listings <- 
+big_network_old_host %>% 
+  filter(n>=100) %>% 
+  nrow() %>% 
+  prettyNum(",")
+
+
+matches <- 
+  matches %>% 
+  filter(x_pid %in% property$property_ID,
+         y_pid %in% property$property_ID)
+
+matches <- 
+  matches %>%
+  left_join(select(property, property_ID, city), by = c("x_pid" = "property_ID")) %>%
+  rename(x_city = city) %>% 
+  left_join(select(property, property_ID, city), by = c("y_pid" = "property_ID")) %>%
+  rename(y_city = city) %>% 
+  filter(x_city == y_city) %>% 
+  select(x_pid, y_pid)
+
+matches_big_host <-
+matches %>%
+  left_join(select(filter(property, host_ID == "100000334"), property_ID, old_host), by = c("x_pid" = "property_ID")) %>%
+  rename(x_host = old_host) %>% 
+  left_join(select(filter(property, host_ID == "100000334"), property_ID, old_host), by = c("y_pid" = "property_ID")) %>%
+  rename(y_host = old_host) %>% 
+  filter(!is.na(x_host), !is.na(y_host))
+
+matches_big_host <-
+matches_big_host %>% 
+  filter(x_host != y_host) %>% 
+  mutate(pairs = map2(x_host, y_host, c)) %>%
+  mutate(pairs = map(pairs, sort)) %>%
+  mutate(x_host = map_chr(pairs, `[`, 1),
+         y_host = map_chr(pairs, `[`, 2)) %>%
+  count(x_host, y_host, name = "count", sort = TRUE) %>% 
+  rowwise() %>% 
+  mutate(x_nb_properties = (property %>% 
+                            filter(old_host == x_host) %>% 
+                            nrow()),
+         y_nb_properties = (property %>% 
+                            filter(old_host == y_host) %>% 
+                            nrow()),
+         nb_properties = x_nb_properties + y_nb_properties,
+         density_matches = count/nb_properties) %>% 
+  ungroup()
+
+# property %>%
+#   filter(old_host %in% (rbind((matches_big_host %>%
+#                                  filter(density_matches > 0.25) %>%
+#                                  distinct(x_host) %>%
+#                                  rename(host = x_host)),
+#                               (matches_big_host %>%
+#                                  filter(density_matches > 0.25) %>%
+#                                  distinct(y_host) %>%
+#                                  rename(host = y_host))) %>%
+#                           distinct(host) %>%
+#                           pull()))
+
+big_network_percent_matches_density_100 <- 
+matches_big_host %>% 
+  filter(x_host %in% (big_network_old_host %>% 
+                      filter(n>=100) %>% 
+                      pull(old_host)),
+         y_host %in% (big_network_old_host %>% 
+                      filter(n>=100) %>% 
+                      pull(old_host))) %>% 
+  summarize(mean(density_matches)) %>% 
+  pull() %>% 
+  scales::percent(accuracy = 0.1)
+
+big_network_hosts_more_1000_listings <- 
+big_network_old_host %>% 
+  filter(n>=1000) %>% 
+  nrow() %>% 
+  prettyNum(",")
+
+big_network_percent_matches_density_1000 <- 
+matches_big_host %>% 
+  filter(x_host %in% (big_network_old_host %>% 
+                      filter(n>=1000) %>% 
+                      pull(old_host)),
+         y_host %in% (big_network_old_host %>% 
+                      filter(n>=1000) %>% 
+                      pull(old_host))) %>% 
+  summarize(mean(density_matches)) %>% 
+  pull() %>% 
+  scales::percent(accuracy = 0.1)
+
+nb_other_cities_big_network <- 
+property %>% 
+  filter(host_ID == pull(networks_size[1,1]),
+         !city %in% c("Kissimmee", "Davenport")) %>%
+  nrow() %>% 
+  prettyNum(",")
+  
+
+```
+
+This particular network is however extraordinary. It is `r times_bigger_than_second` times larger than the second largest network of hosts, which posted `r second_network_size` listings. Further analysis let us uncover that this network merged `r nb_old_hosts_big_network` host accounts, mostly sharing photos of properties in Kissimme and Davenport. It is combining host accounts from a highly commercial network of property owner or property management companies, since `r big_network_hosts_more_100_listings` host accounts part of this network posted at least 100 listings since their account's creation. Their merging into one network is supported by the evidence: the density of matches between these `r big_network_hosts_more_100_listings` commercial host accounts is very high. Indeed, the density of matches between all of these hosts, if we pair together every host account that matched at least once, is at `r big_network_percent_matches_density_100`. For every pair of host accounts that had matching photos, for every 100 listings these hosts posted, an average of ten of them were sharing the same listing's image. Moreover, still in this network, if we look at the `r big_network_hosts_more_1000_listings` host accounts which posted more than 1,000 listings since their account's creation, the figure is of `r big_network_percent_matches_density_1000`. It lets us believe that these host accounts are, indeed, part of the same network of hosts.
+
+Again, this network is mostly active in Kissimmee and Davenport, and the matches were mostly photos of resorts. Once we filter out the listings from these cities, this particular network shrinks down to `r nb_other_cities_big_network` listings, shared among the 8 other largest STR market in North America. 
+
+```{r city_networks_density, include = TRUE}
+
+listings_network_density <- 
+property %>% 
+  group_by(city) %>% 
+  summarize(nb_listings = n()) %>% 
+  left_join(property %>% 
+              group_by(city) %>% 
+              count(host_ID) %>% 
+              summarize(nb_networks = n())) %>% 
+  mutate(host_density = nb_listings/nb_networks) %>% 
+  arrange(-host_density) %>% 
+  mutate(K_and_D = ifelse(city %in% c("Kissimmee", "Davenport"), T, F))
+
+ny_listings_per_network <- 
+listings_network_density %>% 
+  filter(city == "New York") %>% 
+  pull(host_density) %>% round(digit = 2)
+
+graph_listings_per_networks <- 
+  listings_network_density %>% 
+  mutate(K_and_D = factor(K_and_D, levels = c(TRUE, FALSE))) %>% 
+  ggplot()+
+  geom_col(aes(city, host_density), fill = color_palette[1])+
+  theme_minimal()+
+  theme(strip.text.x = element_blank())+
+  xlab(NULL)+
+  ylab("Average number of listings per network")
+
+graph_listings_per_networks <- 
+  graph_listings_per_networks+ 
+  ggforce::facet_row(vars(K_and_D), 
+                     scales = 'free', 
+                     space = 'free')
+
+ggsave(here("output", "figures", "graph_listings_per_networks.png"), plot = graph_listings_per_networks, width = 7.5, 
+       height = 3, units = "in")
+
+graph_listings_per_networks
+
+
+
+
+c(property %>% 
+      filter(city == "New York") %>% 
+      distinct(old_host) %>% pull(), property %>% 
+      filter(city == "New York") %>% 
+      distinct(host_ID) %>% pull()) %>% 
+  unique() %>% 
+  length()
+
+
+```
+
+Figure TKTK shows the average number of listings operated by every network of hosts present in a given city, which reveals the cities with the densest STR operations. Kissimmee and Davenport required their own scale, since their density is more than 5 times the average density of the other markets. Looking at the more usual STR markets, Miami, San Diego and Los Angeles have the highest average of listings per network. In New York, where this density is the lowest, every network of hosts operates on average only `r ny_listings_per_network` listings. It's closer to one listing per individual, which opens the possibility that, in New York more than in the other big STR markets, hosts may be operating real home sharing from their principal residence.
+
+<!-- Ça pourrait être intéressant faire une table qui montre par ville le nombre de listings, le nombre de réseaux, le nombre de listings par réseaux, le nombre de host accounts par réseaux, le nombre de listing pour le plus grand réseau actif dans cette ville là, etc. -->

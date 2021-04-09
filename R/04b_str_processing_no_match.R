@@ -23,25 +23,11 @@ property_nm <-
 
 # Filter out cities with same city name in different states ---------------
 
-properties_to_discard <- 
+property_nm <- 
   property_nm %>% 
-  group_by(city) %>% 
-  count(region, sort=T) %>%
-  filter(n<100)
-
-for(i in 1:nrow(properties_to_discard)) {
-  
-  to_discard <- 
-    property_nm %>% 
-    filter(city == pull(properties_to_discard[i,1]) & region == pull(properties_to_discard[i,2]))
-  
-  property_nm <- 
-    property_nm %>% 
-    filter(!property_ID %in% to_discard$property_ID)
-  
-}
-
-rm(to_discard, properties_to_discard)
+  group_by(region, city) %>% 
+  filter(n()>100) %>% 
+  ungroup()
 
 
 # Filter out properties that seems to be a lag ----------------------------
@@ -51,10 +37,11 @@ property_nm <-
   filter(!(host_ID == "108156815" & created == "2019-12-13" &
              scraped == "2019-12-27"))
 
-# Filter daily_nm and host considering changes above -------------------------
 
-daily_nm <-
-  daily_nm %>%
+# Filter daily and host considering changes above -------------------------
+
+daily <-
+  daily %>%
   filter(property_ID %in% property_nm$property_ID)
 
 host <- 
