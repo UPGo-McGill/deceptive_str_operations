@@ -81,42 +81,58 @@ host_face_confidence <-
   mutate(face_confidence = unlist(results))
 
 
+# Match these face_confidence with host networks --------------------------
+
+host_networks <- qread("output/host_networks.qs")
+
+host_face_confidence_networks <- 
+  host_networks %>% 
+  rowwise() %>% 
+  mutate(face_confidence = (host_face_confidence %>%
+                              filter(host_ID %in% all_host_IDs) %>% 
+                              summarize(face_confidence = mean(face_confidence, na.rm=T)) %>% 
+                              pull(face_confidence))) %>% 
+  ungroup() %>% 
+  mutate(face_confidence = ifelse(is.nan(face_confidence), NA, face_confidence))
+
+
 # Save result -------------------------------------------------------------
 
 qsave(host_face_confidence, file = "output/host_face_confidence.qs")
+qsave(host_face_confidence_networks, file = "output/host_face_confidence_networks.qs")
 
-
-qload("output/str_processed.qsm")
-
-
-# Look at different confidence levels results -----------------------------
-
-confidence_studied <- 
-host_face_confidence %>% 
-  filter(!is.na(face_confidence),
-         face_confidence >=80)
-
-for(i in 1:nrow(confidence_studied)){
-  print(image_read(pull(confidence_studied[i,2])))
-  Sys.sleep(0.1)
-}
-
-
-# Start an analysis -------------------------------------------------------
-
-library(sf)
-
-property %>% 
-  st_drop_geometry() %>% 
-  filter(scraped >= "2019-01-01") %>% 
-  group_by(host_ID) %>% 
-  summarize(commercial = sum(commercial)) %>% 
-  mutate(commercial = ifelse(commercial > 0, T, F)) %>% 
-  # inner_join for now because I only have 20k host photos
-  inner_join(filter(select(host_face_confidence, -url), !is.na(face_confidence)), by = "host_ID") %>%
-  group_by(commercial) %>% 
-  summarize(zero_face = sum(face_confidence == 0, na.rm=T), listings_nb = n()) %>% 
-  mutate(per = scales::percent(zero_face/listings_nb, accuracy = 0.01))
-
-## When we're looking at the most recent only, commercial have higher scores.
-## Let's try to do a plot with a time variable?
+# 
+# qload("output/str_processed.qsm")
+# 
+# 
+# # Look at different confidence levels results -----------------------------
+# 
+# confidence_studied <- 
+# host_face_confidence %>% 
+#   filter(!is.na(face_confidence),
+#          face_confidence >=80)
+# 
+# for(i in 1:nrow(confidence_studied)){
+#   print(image_read(pull(confidence_studied[i,2])))
+#   Sys.sleep(0.1)
+# }
+# 
+# 
+# # Start an analysis -------------------------------------------------------
+# 
+# library(sf)
+# 
+# property %>% 
+#   st_drop_geometry() %>% 
+#   filter(scraped >= "2019-01-01") %>% 
+#   group_by(host_ID) %>% 
+#   summarize(commercial = sum(commercial)) %>% 
+#   mutate(commercial = ifelse(commercial > 0, T, F)) %>% 
+#   # inner_join for now because I only have 20k host photos
+#   inner_join(filter(select(host_face_confidence, -url), !is.na(face_confidence)), by = "host_ID") %>%
+#   group_by(commercial) %>% 
+#   summarize(zero_face = sum(face_confidence == 0, na.rm=T), listings_nb = n()) %>% 
+#   mutate(per = scales::percent(zero_face/listings_nb, accuracy = 0.01))
+# 
+# ## When we're looking at the most recent only, commercial have higher scores.
+# ## Let's try to do a plot with a time variable?

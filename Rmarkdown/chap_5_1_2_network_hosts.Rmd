@@ -243,6 +243,115 @@ c(property %>%
 
 ```
 
-Figure TKTK shows the average number of listings operated by every network of hosts present in a given city, which reveals the cities with the densest STR operations. Kissimmee and Davenport required their own scale, since their density is more than 5 times the average density of the other markets. Looking at the more usual STR markets, Miami, San Diego and Los Angeles have the highest average of listings per network. In New York, where this density is the lowest, every network of hosts operates on average only `r ny_listings_per_network` listings. It's closer to one listing per individual, which opens the possibility that, in New York more than in the other big STR markets, hosts may be operating real home sharing from their principal residence.
+Figure TKTK shows the average number of listings operated by every network of hosts present in a given city, which reveals the cities with the densest STR operations. Kissimmee and Davenport required their own scale, since their density is more than 5 times the average density of the other markets (TKTK TALK ABOUT KISSIMMEE AND DAVENPORT PRIOR TO THE LISTINGS NESTING). Looking at the more usual STR markets, Miami, San Diego and Los Angeles have the highest average of listings per network. In New York, where this density is the lowest, every network of hosts operates on average only `r ny_listings_per_network` listings. It's closer to one listing per individual, which opens the possibility that, in New York more than in the other big STR markets, hosts may be operating real home sharing from their principal residence.
 
-<!-- Ça pourrait être intéressant faire une table qui montre par ville le nombre de listings, le nombre de réseaux, le nombre de listings par réseaux, le nombre de host accounts par réseaux, le nombre de listing pour le plus grand réseau actif dans cette ville là, etc. -->
+```{r listings_hosts_summary_table, include=T}
+
+nb_properties_biggest_host <- 
+  property %>% 
+  count(city, host_ID) %>% 
+  group_by(city) %>% 
+  summarize(`Properties operated by biggest local network` = max(n))
+
+summary_table <- 
+property %>% 
+  group_by(city) %>% 
+  summarize(Listings = length(c(unique(property_ID), unique(all_PIDs))),
+            Properties = n(),
+            `Recycled listings` = Listings-Properties,
+            `Host accounts` = length(c(unique(host_ID), unique(old_host))),
+            Networks = length(unique(host_ID)),
+            `Properties per networks` = round(Properties/Networks, digits=2),
+            `Host accounts per networks` = round(`Host accounts`/Networks, digits=2),
+            ) %>% 
+  arrange(-Properties) %>% 
+  left_join(nb_properties_biggest_host) %>% 
+  mutate(x = `Properties operated by biggest local network`/ `Properties`) %>% 
+  select(-Listings, -`Host accounts per networks`, -`Host accounts`) %>% 
+  rename(`City` = city) %>% 
+  mutate(across(where(is.numeric), prettyNum, ","))
+         #%>% 
+  # kableExtra::kbl(align = "lrrrrr",
+  #                 escape = FALSE) %>% 
+  # kableExtra::kable_material("striped", html_font = "Avenir LT Std 45 Book") %>%
+  # kableExtra::as_image(width = .01, height = 0.5, file = "kable.png")
+
+write.table(summary_table, file = here("output", "figures", "summary_table.txt"), sep = ";", quote = FALSE, row.names = F)
+
+"AQUÍ HAY THE TABLE"
+
+``` 
+
+TABLE TKTK goes deeper into the number of roperties and networks in each city. The city with the highest number of STR properties in North America is New York. It's also where there are the most networks (or hosts) active, making it the city with the lowest proportion of properties per networks. Moreover, still speaking of New York, even though it seems like the least commercial city in our table due to the low number of properties per network, it is the city, of all the more common markets (putting Kissimmee and Davenport aside), where the largest local network has the most properties, at `r summary_table[1,6]` properties. Los Angeles and Montreal comes after, with almost half of New York's number. 
+
+```{r network_analysis}
+
+networks_location <- 
+  property %>% 
+  group_by(host_ID) %>% 
+  distinct(old_host, .keep_all=T) %>% 
+  summarize(hosts_in_network = n(),
+            cities = list(unique(city)),
+            nb_cities = map_int(cities, length)) %>% 
+  arrange(-hosts_in_network)
+
+nb_networks_more_one_city <- 
+  networks_location %>% 
+  filter(nb_cities>1) %>% 
+  nrow()
+
+cities_net_more_1_city <- 
+unlist(filter(networks_location,nb_cities>1)$cities) %>%
+  as_tibble() %>%
+  count(value, sort=T)
+
+edges <-
+  networks_location %>% 
+  filter(nb_cities>1) %>%
+  mutate(pairs = map2(cities, cities, expand.grid, stringsAsFactors = FALSE)) %>%
+  unnest(pairs) %>%
+  mutate(pairs = map2(Var1, Var2, c)) %>%
+  select(-Var1, -Var2) %>%
+  mutate(pairs = map(pairs, sort)) %>%
+  rowwise() %>%
+  filter(pairs[1] != pairs[2]) %>%
+  ungroup() %>%
+  distinct() %>%
+  mutate(V1 = map_chr(pairs, `[`, 1),
+         V2 = map_chr(pairs, `[`, 2)) %>%
+  count(V1, V2, name = "weight", sort = TRUE)
+
+nodes <- unique(property$city) %>% 
+  as_tibble() %>% 
+  rename(city=value)
+
+library(tidygraph)
+
+graph <- tbl_graph(nodes = nodes, edges = edges, directed=F, node_key = "city")
+
+library(ggraph)
+
+city_colors  <- colorRampPalette(color_palette[c(3,6,1,4,2)])
+
+networks_hosts_ggraph <-   
+  edges %>% 
+    ggraph(layout = 'linear', circular = T) + 
+    geom_edge_link(aes(width = weight), color = color_palette[5], alpha = 0.5) + 
+    theme_graph() + 
+    geom_node_text(aes(label = name), nudge_y = c(rep(0.1,3),rep(-0.1,5),rep(0.1,2)))+
+    geom_node_point(aes(colour = name), size = 5, color = city_colors(10))+
+    theme(
+      legend.position = "none",
+      plot.margin=grid::unit(c(1,1,1,1), "mm"))
+  
+ggsave(here("output", "figures", "networks_hosts_ggraph.png"), plot = networks_hosts_ggraph, width = 7, 
+       height = 5, units = "in")
+
+
+```
+
+Are networks of hosts operating multiple listings in different cities of North America? When looking at the 10 biggest STR market in this geography, we found `r nb_networks_more_one_city` networks of hosts operating in more than one of these 10 cities. The preferred locations for networks who are present in multiple cities are `r cities_net_more_1_city[1,1]`, with `r cities_net_more_1_city[1,2]` networks of hosts, and `r cities_net_more_1_city[2,1]`, with `r cities_net_more_1_city[2,2]`. FIGURE TKTK shows the density of connection between the 10 markets. The thicker the line, the more networks operating in both cities there is. It is again Davenport and Kissimmee that share the highest number of networks operating in both cities, at `r edges$weight[1]` networks of hosts. However, a very similar density exists between Los Angeles and New York (`r edges$weight[2]`), and Los Angeles and San Diego (`r edges$weight[3]`). Montreal and Toronto, the two Canadian cities, share `r edges$weight[4]` networks of hosts. Overall, on the figure, we still see that there is a lot of connections (the sum of the weights is `r sum(edges$weight)`). 
+
+```{r network_graph, include=T}
+networks_hosts_ggraph
+```

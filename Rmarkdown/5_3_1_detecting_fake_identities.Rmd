@@ -1,0 +1,279 @@
+---
+title: "Chap. 5.3.1"
+header-includes:
+   - \usepackage[default]{sourcesanspro}
+mainfont: sourcesanspro
+author: "Max"
+date: "`r format(Sys.time(), '%B %Y')`"
+output: html_document
+---
+
+```{r setup, include = FALSE}
+
+# Function for checking file modifications
+# mtime <- function(files) lapply(Sys.glob(files), function(x) file.info(x)$mtime)
+
+knitr::opts_chunk$set(echo = FALSE)
+knitr::opts_chunk$set(include = FALSE)
+knitr::opts_chunk$set(message = FALSE)
+knitr::opts_chunk$set(warning = FALSE)
+
+library(here)
+source(here("R", "01_source.R"))
+
+property <- qread(here("output", "property.qs"), parallel::detectCores())
+# daily <- qread(here("output", "daily.qs"), parallel::detectCores())
+property_nm <- qread(here("output", "property_nm.qs"), parallel::detectCores())
+# matches <- qread(here("output", "matches.qs"), parallel::detectCores())
+# match_groupings <- qread(here("output", "match_groupings.qs"), parallel::detectCores())
+# daily_nm <- qread("output/daily_nm.qs", nthreads = 8)
+host_face_confidence_networks <- qread(here("output", "host_face_confidence_networks.qs"))
+match_groupings_diff_city <- qread(here("output", "match_groupings_diff_city.qs"), parallel::detectCores())
+
+
+
+```
+# 5.3.1 Detecting fake identities
+
+## 5.3.1.1 Human face detection software
+
+```{r first_overview}
+
+multi_cities <- 
+property %>% 
+  group_by(host_ID) %>% 
+  count(city) %>% 
+  ungroup() %>% 
+  count(host_ID, sort=T, name = "index") %>% 
+  left_join(host_face_confidence_networks) %>% 
+  mutate(index = ifelse(index > 1, TRUE, FALSE)) %>% 
+  group_by(index) %>% 
+  summarize(avg = mean(face_confidence, na.rm = TRUE)/100) %>% 
+  mutate(domain = "Multiple cities")
+
+#' A host that is in multiple city (commercial host) will have a dramatic 20% 
+#' less chance of providing a face on his host_photo.
+
+multi_listings <- 
+property %>% 
+  group_by(host_ID) %>% 
+  summarize(multi = sum(multi)) %>% 
+  mutate(index = ifelse(multi > 0, TRUE, FALSE))  %>% 
+  left_join(host_face_confidence_networks) %>% 
+  group_by(index) %>% 
+  summarize(avg = mean(face_confidence, na.rm = TRUE)/100) %>% 
+  mutate(domain = "Multiple listings")
+
+no_face_avg <-
+  rbind(multi_cities, multi_listings) %>% 
+  mutate(per = scales::percent(avg),
+         index = factor(index, levels = c("TRUE", "FALSE"))) %>% 
+  ggplot()+
+  geom_bar(aes(x = index, y = avg, fill = index), stat="identity", 
+           fill = c(gp_duo4, gp_duo4))+
+  facet_wrap("domain")+
+  scale_y_continuous(labels = scales::percent)+
+  geom_text(aes(x = index, y = avg, label=per), vjust=2)+
+  theme_minimal()+
+  xlab(NULL)+
+  ylab("Face detection average")+
+  theme(legend.position = "none")
+
+ggsave(here("output", "figures", "no_face_avg.png"), plot = no_face_avg, width = 7, 
+       height = 4, units = "in")
+
+```
+
+The human face detection software gave unequivocally clear results when it comes to commercial operations. FIGURE TKTK shows that hosts operating in more than one of the cities under analysis have an average of `r scales::percent(pull(multi_cities[2,2]), accuracy =0.1)` chances of having a face on their host profile pictures. For the hosts operating in only one city, the figure is `r scales::percent(pull(multi_cities[1,2]), accuracy =0.1)`. It is showcasing the possibility that a big chunk of the first group of networks, which are most likely highly commercial if active in multiple big STR market, are not owned and operated by a single individual with a real identity, but is instead most likely a business. There is a similarity regarding hosts operating multiple listings, but the discrepancy for the hosts operating multiple listings and the hosts operating only one is `r scales::percent(pull(multi_listings[1,2]) - pull(multi_listings[2,2]), accuracy =0.1)`.
+
+```{r first_plot, include = T}
+
+no_face_avg
+
+```
+
+```{r commercial_vs_host_face_avg}
+
+host_face_commercial <-
+property %>% 
+  mutate(commercial = ifelse(FREH == T | multi == T, T, F)) %>% 
+  arrange(-commercial) %>% 
+  distinct(host_ID, .keep_all=T) %>% 
+  select(host_ID, commercial) %>% 
+  left_join(select((host_face_confidence_networks %>% 
+                      mutate(bounds = cut(face_confidence, breaks=20, labels= c(2.5, 2.5+5*1:19)))), host_ID, bounds)) %>% 
+  filter(!is.na(bounds)) %>% 
+  group_by(bounds) %>% 
+  count(commercial) %>% 
+  group_by(commercial) %>% 
+  mutate(perc_commercial = n/sum(n),
+         facet_bounds = case_when(bounds == 2.5 ~ "lower_bound",
+                                  bounds == 97.5 ~ "upper_bound",
+                                  T ~ "middle_bounds"),
+         commercial = ifelse(commercial == T, "Commercial hosts", "Non-commercial hosts"))
+
+nb_commercial_hosts <- 
+  host_face_commercial %>% 
+  group_by(commercial) %>% 
+  summarize(n = prettyNum(sum(n), ","))
+
+face_detection_975 <- 
+  host_face_commercial %>% 
+  filter(bounds == 97.5,
+         commercial == "Non-commercial") %>% 
+  pull(perc_commercial) %>% 
+  scales::percent(accuracy = 0.1)
+
+face_detection_975_2 <- 
+  host_face_commercial %>% 
+  filter(bounds == 97.5) %>% 
+  select(perc_commercial)
+```
+
+FIGURE TKTK goes deeper in the relationship between commercialization and faces on host accounts' photo. If a network (or single host) operated at least one commercial listing, which means they operated either a frequently rented entire home, or operated multiple listings which were active at least once on the same day, then they were categorized as a commercial host. `r nb_commercial_hosts[1,2]` hosts were commercial operators, while the rest (`r nb_commercial_hosts[2,2]`) were not. The figure shows what percentage of listings in each category (commercial or not) fell into each amount of % of face detection, separated by commercialization in color. For example, looking at the bars on the far right, for `r face_detection_975` of all non-commercial listings, the face detection algorithm detected a 97.5% chance of having a face on the host account's photo. For the same face detection chance, the figure is `r scales::percent(pull(face_detection_975_2[1,2])-pull(face_detection_975_2[2,2]), accuracy = 0.1)` lower for the commercial hosts. Looking at the figure, the more the % of face detection gets smaller, the more we see higher percentages of commercial hosts. It is according to our hypothesis that commercial operators would show less their faces, because their operations are most likely businesses rather than single individuals doing home-sharing.
+
+```{r host_face_commercial_op_plot, include = T}
+# host_face_commercial_plot <- 
+#   host_face_commercial %>% 
+#   ggplot()+
+#   geom_col(aes(bounds, perc_commercial, fill = commercial), position = "dodge")+
+#   scale_fill_manual(values = gp_duo1)+
+#   scale_y_continuous(labels = scales::percent_format(accuracy = 0.1))+
+#   theme_minimal()+
+#   theme(strip.text.x = element_blank(),
+#         axis.text.x = element_text(angle=45),
+#         legend.position = "bottom",
+#         legend.title = element_blank())+
+#   ylab("Percentage of listings in the group")+
+#   xlab("% of face detection")
+# 
+# host_face_commercial_plot <- 
+# host_face_commercial_plot + 
+#   ggforce::facet_row(vars(facet_bounds), 
+#                      scales = 'free', 
+#                      space = 'free')
+
+host_face_commercial_plot_1 <- 
+  host_face_commercial %>% 
+  ggplot()+
+  geom_col(aes(bounds, perc_commercial, fill = commercial), position = "dodge")+
+  scale_fill_manual(values = gp_duo1)+
+  scale_y_continuous(labels = scales::percent_format(accuracy = 0.1))+
+  theme_minimal()+
+  theme(strip.text.x = element_blank(),
+        axis.text.x = element_text(angle=45),
+        legend.position = "none",
+        legend.title = element_blank())+
+  ylab("Percentage of listings in the group")+
+  xlab("% of face detection")
+
+host_face_commercial_plot_2 <-
+host_face_commercial %>% 
+  filter(facet_bounds == "lower_bound") %>% 
+  ggplot()+
+  geom_col(aes(bounds, perc_commercial, fill = commercial), position = "dodge")+
+  scale_fill_manual(values = gp_duo1)+
+  scale_y_continuous(labels = scales::percent_format(accuracy = 0.1))+
+  theme_minimal()+
+  theme(strip.text.x = element_blank(),
+        axis.text.x = element_text(angle=45),
+        legend.position = "none",
+        legend.title = element_blank())+
+  ylab("Percentage of listings in the group")+
+  xlab(NULL)
+
+host_face_commercial_plot_3 <-
+host_face_commercial %>% 
+  filter(facet_bounds == "middle_bounds") %>% 
+  ggplot()+
+  geom_col(aes(bounds, perc_commercial, fill = commercial), position = "dodge")+
+  scale_fill_manual(values = gp_duo1)+
+  scale_y_continuous(labels = scales::percent_format(accuracy = 0.1))+
+  theme_minimal()+
+  theme(strip.text.x = element_blank(),
+        axis.text.x = element_text(angle=45),
+        legend.position = "bottom",
+        legend.title = element_blank())+
+  ylab(NULL)+
+  xlab("% of face detection")
+
+host_face_commercial_plot_4 <-
+host_face_commercial %>% 
+  filter(facet_bounds == "upper_bound") %>% 
+  ggplot()+
+  geom_col(aes(bounds, perc_commercial, fill = commercial), position = "dodge")+
+  scale_fill_manual(values = gp_duo1)+
+  scale_y_continuous(labels = scales::percent_format(accuracy = 0.1))+
+  theme_minimal()+
+  theme(strip.text.x = element_blank(),
+        axis.text.x = element_text(angle=45),
+        legend.position = "none")+
+  ylab(NULL)+
+  xlab(NULL)
+
+empty_space_plot <- ggplot() + theme_void()
+
+library(patchwork)
+host_face_commercial_plot <- host_face_commercial_plot_1 /
+((host_face_commercial_plot_2 |empty_space_plot| 
+    host_face_commercial_plot_3 |empty_space_plot| 
+    host_face_commercial_plot_4) +
+   plot_layout(widths = c(2,1,20,1,2)))
+
+ggsave(here("output", "figures", "host_face_commercial_plot.png"), plot = host_face_commercial_plot, width =7, 
+       height = 6.25, units = "in")
+
+host_face_commercial_plot
+
+```
+
+# 5.3.1.2 Hosts' name detection in reviews
+
+THIS PARAGRAPH WE WANT TO KEEP THE ONE ON THE DOC                          On the Airbnb platform, we have seen, with prior investigative journalism articles, stock photos used as profile pictures (Conti 2019), to appear as if the host has a unique identity. In these cases, a face is detected by our software, but the fake photo that is used represents a form of deception. To overcome this error margin, we developed a second way of detecting fake identities. We listed all the reviews left to each of the individual hosts, and we detected the frequency of use of the host name in these reviews. On an aggregated level, if reviewers repeat the host’s name, it is an indication that they met the individual. If they met them, so mention them, the identity is most likely confirmed. On the other side, if many reviews are let and none mention the host's name, it is probably not a single individual behind the operation.
+
+
+
+## 5.3.2 Fake listings
+
+```{r matched_other_cities}
+
+nb_match_diff_city <- 
+property %>% 
+  filter(match_diff_city > 0) %>% 
+  nrow() %>% prettyNum(",")
+
+nb_match_diff_city_kd <- 
+property %>% 
+  filter(match_diff_city > 0,
+         city %in% c("Kissimmee", "Davenport")) %>% 
+  nrow() %>% prettyNum(",")
+
+nb_match_diff_city_outside_kd <- 
+property %>% 
+  filter(match_diff_city > 0,
+         !city %in% c("Kissimmee", "Davenport")) %>% 
+  nrow() %>% prettyNum(",")
+
+highest_match_diff_city <- 
+property %>% 
+filter(!city %in% c("Kissimmee", "Davenport")) %>%
+filter(match_diff_city == max(match_diff_city)) %>% 
+  select(property_ID, city, match_diff_city)
+
+big_grouping_diff_city <- 
+  Filter(function(x) any(highest_match_diff_city$property_ID %in% x), match_groupings_diff_city) %>% 
+  unlist()
+
+big_grouping_other_city <- 
+property %>% 
+  filter(property_ID %in% big_grouping_diff_city) %>% 
+  count(city, sort=T) %>% 
+  slice(1) %>% 
+  pull(city)
+
+  
+```
+
+As explained multiple times in this research work, a host can post listings displaying photos of the interior of a unit they do not own. They may accumulate fake reviews to gain the consumers' trust, and once the apartment is booked and the guests are in town, they invite them to another unit of lower quality. A fraudulent host may post stock photos, or photos of another successful STR unit available in another city. To study such a case, we used the image matching software to identify if there were properties using listing photos which were also used by a listing in another large North American STR market. Within the 10 largest STR market in North America, there were `r nb_match_diff_city` properties that posted the same photo as at least another property in another city. The vast majority of them (`r nb_match_diff_city_kd`) were photos matched between the city of Kissimmee and Davenport, which does not seem that odd due to two factors. First, due to what we uncover at the section 5.1.1: the vast majority of matches in a market like Kissimmee and Davenport, where multiple resorts are listed, are likely to be listings of similar, but still distinct units. Second, due to their geographical proximity. Airbnb may tag one address in Kissimmee, and the neighbor in Davenport, interchangeably. 
+
+Outside of these two cities, only `r nb_match_diff_city_outside_kd` properties had a matching photo with a property of another city. It seems like a small number, however it is distributed among the 8 other cities. For example, there is one property in `r highest_match_diff_city$city` that has been matched to `r highest_match_diff_city$match_diff_city` other listings located in `r big_grouping_other_city`. Both hosts are distinct, and the photo is an inside shot of an apartment. Although we did not find massive use of this technique in the markets we studied, the few examples we did find open up the possibility that this technique is being used, and this research project, if extended to many more cities in North America, could lead to the discovery of more of these cases.

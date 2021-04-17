@@ -56,12 +56,10 @@ nb_match_groupings <-
   match_groupings %>% length() %>% prettyNum(",")
 
 highest_grouping <- 
-  match_groupings %>% 
-  map(length) %>% 
-  unlist() %>% 
-  as.tibble() %>% 
-  arrange(-value) %>% 
-  slice(1) %>% pull() %>% prettyNum(",")
+  property %>% 
+  filter(matched == max(matched)) %>% 
+  select(matched) %>% 
+  slice(1) %>% pull()+1
 
 nb_listings_matched <- 
   match_groupings %>% 
@@ -83,7 +81,7 @@ match_grouping <-
   nrow() %>% prettyNum(",")
 ```
 
-Prior to nesting listings, there was a total of `r nb_properties$before` properties in our dataset. Once we ran the image matching software, we found that there were `r nb_matches` unique pair of matches, which means that a very high number of listings do not have unique listing photos. Once grouped by city (to not match listings sharing the same photos but location in different cities), we can regroup the pair of matches in groups, groups of properties that are using the same listings photos. There were `r nb_match_groupings` groups of properties sharing the same photo, regrouping a total of `r nb_listings_matched` different listings. The highest number of properties sharing the same photo is as high as `r highest_grouping`, and there are `r match_groupings_more_10` groupings of more than 10 listings sharing the same photo. FIGURE TKTK shows the larger groupings of matched photos in these 10 cities. The 6 of them are either in Kissimmee or in Davenport.
+Prior to nesting listings, there was a total of `r nb_properties$before` properties in our dataset. Once we ran the image matching software, we found that there were `r nb_matches` unique pair of matches, which means that a very high number of listings do not have unique listing photos. Once grouped by city (to not match listings sharing the same photos but location in different cities), we can regroup the pair of matches in groups, groups of properties that are using the same listings photos. There were `r nb_match_groupings` groups of properties sharing the same photo, regrouping a total of `r nb_listings_matched` different listings. The highest number of properties sharing the same photo is as high as `r highest_grouping`, and there are `r match_groupings_more_10` groupings of more than 10 listings sharing the same photo. FIGURE TKTK shows the largest groupings of matched photos in these 10 cities. Most of the biggest groupings are either in Kissimmee or in Davenport.
 
 ```{r photo_shared_url}
 
@@ -95,7 +93,7 @@ property %>%
   ungroup() %>% 
   slice(1:6) %>% 
   select(ab_image_url, matched, city) %>% 
-  mutate(matched = glue::glue("{matched} listings matched"),
+  mutate(matched = glue::glue("{matched+1} listings matched in {city}"),
          ab_image_url = str_sub(ab_image_url, start=1, end=-20))
 
 
@@ -108,7 +106,7 @@ property %>%
   ungroup() %>% 
   slice(1:6) %>% 
   select(ab_image_url, matched, city) %>% 
-  mutate(matched = glue::glue("{matched} listings matched in {city}"),
+  mutate(matched = glue::glue("{matched+1} listings matched in {city}"),
          ab_image_url = str_sub(ab_image_url, start=1, end=-20))
 
 
@@ -149,11 +147,7 @@ multiple_photos(pic_shared_kd)
 
 ```
 
-However, Kissimmee and Davenport shows extraordinary characteristics by their proximity to Disney World Orlando and the vast number of resorts in these cities, which are listed on Airbnb as entire-home housing units. Multiple resorts list a high number of properties on the platform, and use the same first photo for each of their listings. A very general picture, for example a swimming pool FIGURE TKTK shows the count of listings, per each amount of matches, in the 10 biggest STR market in North America. Here are represented listings with at least one match, and under the 90th percentile in regard to the number of other listing to which their photo matched, which filters in listings with less than 25 matches. The vast majority of the listings that matched and are not represented on the figure, because they matched to 25 listings or more, are from Kissimmee and Davenport.
-
-Kissimmee and Davenport shows a very high concentration of matched listings. Indeed, in these two cities, more than half of all listings (respectively 51.0% and 58.2%) shared a photo with another listing of the same city. In the other cities, these numbers are between 9.4% and 17.7%. The Kissimmee and Davenport cases can be due to the fact that they are both near Disney World Orlando: the financial potential of dedicating a housing unit to the STR market may offer high rewards and so high incentives, and there are also a lot of resorts in these cities. Commercial hosts are taking advantage of the platforms of the sharing economy to boost their revenues, and don’t bother using different photos for the different housing units they offer.
-
-The Kissimmee and Davenport cases open another discussion regarding image matching and listings nesting. In certain markets, to use the same image surely still shows some sort of commercialization, but not necessarily deception. We have the resources only to match the first photo used by an Airbnb listing, and we have no information as to whether the other photos used to advertise the accommodation are just as generic, or whether they are more specific about the dwelling booked. The vast majority of matches in a market like Kissimmee and Davenport, where multiple resorts are listed, are likely to be listings of similar, but still distinct units. A similar situation can occur in other cities with more usual STR markets like Montreal or New York, where we have seen a few matches occur due to exterior shots of an apartment complex. However, in the vast majority, in usual STR markets, matches are linked to interior shots, which are expected to be unique per each housing unit as shown on the photo A, B, E and F on figure TKTK. Outside of these two cities, the story is different. 
+However, Kissimmee and Davenport shows extraordinary characteristics by their proximity to Disney World Orlando and the vast number of resorts in these cities, which are listed on Airbnb as entire-home housing units. Multiple resorts list a high number of properties on the platform, and use the same first photo for each of their listings. A very general picture, for example a swimming pool as shown on the photo A, B, E and F on figure TKTK. Outside of these two cities, the story is different. 
 
 Outside Kissimmee and Davenport, the most used photo appeared in `r pic_shared_outside_kd$nb_row` different listings, and is shown on figure TKTK (A). It shows an inside shot of an apartment, which looks very similar to the photo B. These `r pic_shared_outside_kd$nb_row` listings were listed by `r pic_shared_outside_kd$nb_hosts` different hosts, and were mostly all active at the same time for more than a year and a half. It sure can be `r pic_shared_outside_kd$nb_row` hotel rooms that look exactly alike, listed as entire-home housing units. Or, these listings can be used for the bait-and-switch technique, where a host invites a guest to book a listing which displays photos of another unit. The same can be said for the other listings inside vast groupings of matches.
 

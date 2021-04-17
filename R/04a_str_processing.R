@@ -137,7 +137,7 @@ daily <-
          host_ID = if_else(is.na(new_host), host_ID, new_host)) %>%
   select(-new_host)
 
-rm(host_change_table, host_IDs, reduce)
+rm(host_change_table, host_IDs)
 
 
 # Get matches -------------------------------------------------------------
@@ -225,7 +225,7 @@ rm(group_matches, property_change_collapsed, property_change_table,
 
 
 # Column if same photo used in different cities ---------------------------
-matches_dif_city <- 
+matches_diff_city <- 
   matches %>%
   left_join(select(property, property_ID, city), by = c("x_pid" = "property_ID")) %>%
   rename(x_city = city) %>% 
@@ -237,7 +237,7 @@ matches_dif_city <-
 property <- 
 property %>% 
   rowwise() %>% 
-  mutate(match_diff_city = (matches_dif_city %>% 
+  mutate(match_diff_city = (matches_diff_city %>% 
                           filter(x_pid %in% property_ID |
                                    x_pid %in% unlist(all_PIDs) |
                                    y_pid %in% property_ID |
@@ -246,12 +246,19 @@ property %>%
   ungroup()
 
 
-# Column for how many times it matched ------------------------------------
+# To follow which other properties in other city they matched to
+pair_list <- pmap(matches_diff_city, c)
+match_groupings_diff_city <- reduce(pair_list)
+
+qsave(match_groupings_diff_city, file = "output/match_groupings_diff_city.qs",
+      nthreads = parallel::detectCores())
+
+# Column for how many times it matched in same city -----------------------
 
 property <- 
 property %>% 
   rowwise() %>% 
-  mutate(matched = (matches %>% 
+  mutate(matched = (matches_same_city %>% 
                       filter(x_pid == property_ID | y_pid == property_ID) %>% 
                       nrow())) %>% 
   ungroup()
@@ -260,11 +267,18 @@ property %>%
 # How many host accounts in the network -----------------------------------
 
 host_networks <- 
-property %>% 
-  group_by(host_ID) %>% 
-  count(old_host) %>% 
-  summarize(nb_old_hosts = n()) %>%
+  property %>% 
+  distinct(host_ID) %>% 
+  left_join(property %>% 
+              filter(!is.na(old_host)) %>% 
+              group_by(host_ID) %>% 
+              summarize(all_host_IDs = list(unique(old_host)))) %>% 
+  mutate(all_host_IDs = ifelse(all_host_IDs == "NULL", host_ID, all_host_IDs)) %>% 
+  rowwise() %>% 
+  mutate(nb_host_IDs = length(all_host_IDs)) %>% 
   ungroup()
+
+
   
 # Commercial listing column added to property -----------------------------
 library(strr)

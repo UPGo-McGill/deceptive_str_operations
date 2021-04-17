@@ -139,6 +139,9 @@ review <-
 
 # Filter out if not enough words for reliable analysis --------------------
 
+### ONLY DO THAT LATER, FOR THE MODEL. WE WANT TO KEEP ALL OF THESE FOR THE 
+### NETWORK ANALYSIS
+
 review_text <-
   review_text %>%
   filter(lengths(str_split(review, " ")) > 4)
@@ -151,6 +154,9 @@ review <-
   review %>% 
   filter(user_ID %in% review_text$user_ID)
 
+
+### WILL HAVE TO SEPARATED TWO DF. ONE WITH ALL REVIEWS, THE OTHER ONLY FOR
+### THE PROPERTIES UNDER ANALYSIS
 
 # Save every reviews in English -------------------------------------------
 
