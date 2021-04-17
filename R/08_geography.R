@@ -8,7 +8,7 @@ property <- qread("output/property.qs")
 cities_shp <- 
 property %>% 
   st_as_sf(coords = c("longitude", "latitude"), crs = "WGS84") %>% 
-  count(city, name = "Market size", sort = T) %>% 
+  count(city, name = "Market size (listings)", sort = T) %>% 
   mutate(geometry_center = st_centroid(geometry))
 
 country_shp <- rnaturalearth::ne_countries(scale = "medium", returnclass = "sf") %>% 

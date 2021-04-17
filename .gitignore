@@ -29,6 +29,11 @@ vignettes/*.pdf
 deceptive_str_operations.Rproj
 data
 dict
-output
-!output/figures
+# Ignore data files in output
+output/*.qs
+output/*.qsm
+output/*.csv
+output/*.Rdata
+output/host_photos
+output/host_faces
 .secrets
