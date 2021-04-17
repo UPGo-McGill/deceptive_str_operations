@@ -30,4 +30,5 @@ deceptive_str_operations.Rproj
 data
 dict
 output
+!output/figures
 .secrets
