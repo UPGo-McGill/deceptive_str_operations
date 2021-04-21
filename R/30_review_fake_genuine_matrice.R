@@ -3,10 +3,27 @@ source("R/01_source.R")
 
 # Load data ---------------------------------------------------------------
 
-load("output/review_processed.Rdata")
-qload("output/str_processed.qsm",
-      nthreads = parallel::detectCores()-1)
+property <- qread("output/property.qs")
 
+# Load the reviews that have been let only to properties under analysis
+review <- qread("output/m_review.qs")
+review_text <- qread("output/m_review_text.qs")
+review_user <- qread("output/m_review_user.qs")
+
+
+# Filter out reviews let in other geographies -----------------------------
+
+review <- 
+  review %>% 
+  filter(property_ID %in% unique(c(property$property_ID, unlist(property$all_PIDs))))
+
+review_text <- 
+  review_text %>% 
+  filter(review_ID %in% !! review$review_ID)
+
+review_user <- 
+  review_user %>% 
+  filter(user_ID %in% review$user_ID)
 
 # Matrix creation --------------------------------------------------------
 
@@ -20,7 +37,6 @@ review_user_fk <-
 # Relevant info about properties
 property_fk <- 
   property %>% 
-  st_drop_geometry() %>% 
   select(property_ID, host_ID, created, old_host, all_PIDs)
 
 # Matrix creation
@@ -49,20 +65,30 @@ matrice <-
 
 # letting more than 2 reviews at same host
 multiple_reviews_same_host <- 
-  matrice %>% 
-  count(user_ID, host_ID, sort = T) %>% 
-  filter(n>2) %>%
-  inner_join(matrice, by = c("user_ID", "host_ID")) %>%
+  # matrice %>%
+  # count(user_ID, host_ID, sort = T) %>%
+  # filter(n>2) %>%
+  # inner_join(matrice, by = c("user_ID", "host_ID")) %>%
+  # pull(review_ID)
+  matrice %>%
+  group_by(user_ID, host_ID) %>%
+  filter(n() > 2) %>%
   pull(review_ID)
 
 # a user/network letting the same reviews at multiple places
 same_review <-
+  # review_text %>% 
+  # count(user_ID, review, sort=T) %>% 
+  # filter(n>2) %>% # There seems to have an issue on Airbnb's side with double up
+  # # reviews. 
+  # inner_join(review_text, by = c("user_ID", "review")) %>%
+  # pull(review_ID)
   review_text %>% 
-  count(user_ID, review, sort=T) %>% 
-  filter(n>2) %>% # There seems to have an issue on Airbnb's side with double up
-                  # reviews. 
-  inner_join(review_text, by = c("user_ID", "review")) %>%
+  group_by(user_ID, review) %>% 
+  filter(n()>2) %>% # There seems to have an issue on Airbnb's side with double up
+  # reviews. 
   pull(review_ID)
+
 
 # identifying which are the potential fake reviews vs genuine
 fake_reviews_uc <- 
@@ -91,17 +117,28 @@ fake_reviews_uc <-
 #' user, review at least 3 months after creation of account, 
 
 one_review_per_host <- 
+  # matrice %>% 
+  # count(user_ID, host_ID, sort = T) %>% 
+  # filter(n == 1) %>%
+  # inner_join(matrice, by = c("user_ID", "host_ID")) %>% 
+  # pull(review_ID)
+  # INSTEAD
   matrice %>% 
-  count(user_ID, host_ID, sort = T) %>% 
-  filter(n == 1) %>%
-  inner_join(matrice, by = c("user_ID", "host_ID")) %>% 
+  group_by(user_ID, host_ID) %>% 
+  filter(n() == 1) %>%
   pull(review_ID)
 
+
 unique_review <- 
+  # review_text %>% 
+  # count(review, sort=T) %>% 
+  # filter(n == 1) %>% 
+  # inner_join(review_text, by = c("review")) %>% 
+  # pull(review_ID)
+  # INSTEAD:
   review_text %>% 
-  count(review, sort=T) %>% 
-  filter(n == 1) %>% 
-  inner_join(review_text, by = c("review")) %>% 
+  group_by(review) %>% 
+  filter(n() == 1) %>% 
   pull(review_ID)
 
 genuine_reviews <- 
@@ -132,8 +169,8 @@ genuine_reviews <-
 # I should think about trying oversampling, or cost-sensitive classification
 classified_texts <-
   rbind(fake_reviews_uc, genuine_reviews) %>%  #sample_n(genuine_reviews, nrow(fake_reviews_uc)*3)) %>%  
-                                                      # My issue here is that I have way more
-                                                      # "genuine" than "fake" reviews. I keep a 90%/10% ratio
+  # My issue here is that I have way more
+  # "genuine" than "fake" reviews. I keep a 90%/10% ratio
   mutate(fake = as.factor(fake)) %>% 
   distinct(review, .keep_all=T) # duplicated reviews are worth more if we let them in the training dataset
 
@@ -148,7 +185,7 @@ classified_texts %>%
 # Commercial, FREH_3, FREH, ?
 classified_texts %>% 
   left_join(select(review, review_ID, property_ID)) %>% 
-  left_join(select(st_drop_geometry(property), property_ID, FREH)) %>% 
+  left_join(select(property, property_ID, FREH)) %>% 
   group_by(fake) %>% 
   count(FREH) %>% 
   mutate(perc = n/sum(n))
