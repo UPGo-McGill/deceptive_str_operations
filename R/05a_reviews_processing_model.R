@@ -1,9 +1,12 @@
 
 # Load libraries and data -------------------------------------------------
 source("R/01_source.R")
-# library(googleLanguageR)
 
-load("data/review_mtl.Rdata")
+review <- qread("data/review_all.qs",
+                nthreads = parallel::detectCores())
+
+review_text <- qread("data/review_text.qs",
+                     nthreads = parallel::detectCores())
 
 
 # Which package seems best to detect text language ------------------------
@@ -30,8 +33,10 @@ review_text <-
   mutate(lang = cld2::detect_language(text = review, plain_text = FALSE))
 
 
-# # Translation manipulation ------------------------------------------------
+# # Translation manipulation WITH A GOOGLE API ----------------------------
 # 
+# library(googleLanguageR)
+#
 # review_text_other_lang <- 
 #   review_text %>% 
 #   filter(lang != "en")
@@ -132,33 +137,46 @@ review_text <-
   review_text %>%
   filter(!str_detect(review, "this is an automated posting"))
 
-review <-
-  review %>%
-  filter(review_ID %in% review_text$review_ID)
-
 
 # Filter out if not enough words for reliable analysis --------------------
 
-### ONLY DO THAT LATER, FOR THE MODEL. WE WANT TO KEEP ALL OF THESE FOR THE 
-### NETWORK ANALYSIS
-
 review_text <-
   review_text %>%
-  filter(lengths(str_split(review, " ")) > 4)
+  filter(lengths(str_split(review, " ")) >= 5)
 
 review <- 
   review %>% 
   filter(review_ID %in% review_text$review_ID)
 
-review <- 
-  review %>% 
+review_user <- 
+  review_user %>% 
   filter(user_ID %in% review_text$user_ID)
 
 
-### WILL HAVE TO SEPARATED TWO DF. ONE WITH ALL REVIEWS, THE OTHER ONLY FOR
-### THE PROPERTIES UNDER ANALYSIS
+# Change the property_ID to the new one after image matching --------------
+property <- qread(here("output", "property.qs"), parallel::detectCores())
+
+property_unnested <- 
+  property %>% 
+  select(property_ID, all_PIDs) %>% 
+  unnest(all_PIDs) %>% 
+  rename(new_ID = property_ID,
+         old_ID = all_PIDs)
+
+review <- 
+  review %>% 
+  left_join(property_unnested, by = c("property_ID" = "old_ID")) %>% 
+  mutate(property_ID = coalesce(new_ID, property_ID)) %>% 
+  select(-new_ID)
+
 
 # Save every reviews in English -------------------------------------------
 
-qsavem(review, review_text, review_user, file = "output/review_processed.qsm",
-       nthreads = parallel::detectCores()-1)
+qsave(review, file = "output/m_review.qs",
+       nthreads = parallel::detectCores())
+
+qsave(review_text, file = "output/m_review_text.qs",
+      nthreads = parallel::detectCores())
+
+qsave(review_user, file = "output/m_review_user.qs",
+      nthreads = parallel::detectCores())

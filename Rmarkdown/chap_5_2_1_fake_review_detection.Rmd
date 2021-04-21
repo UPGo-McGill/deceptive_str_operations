@@ -1,0 +1,179 @@
+---
+title: "Chap. 5.2.1. Fake review detection"
+header-includes:
+   - \usepackage[default]{sourcesanspro}
+mainfont: sourcesanspro
+author: "Max"
+date: "`r format(Sys.time(), '%B %Y')`"
+output: html_document
+---
+
+```{r setup, include = FALSE}
+
+# Function for checking file modifications
+# mtime <- function(files) lapply(Sys.glob(files), function(x) file.info(x)$mtime)
+
+knitr::opts_chunk$set(echo = FALSE)
+knitr::opts_chunk$set(include = FALSE)
+knitr::opts_chunk$set(message = FALSE)
+knitr::opts_chunk$set(warning = FALSE)
+
+library(here)
+source(here("R", "01_source.R"))
+library(caret)
+
+property <- qread(here("output", "property.qs"), parallel::detectCores())
+# daily <- qread(here("output", "daily.qs"), parallel::detectCores())
+# property_nm <- qread(here("output", "property_nm.qs"), parallel::detectCores())
+# matches <- qread(here("output", "matches.qs"), parallel::detectCores())
+# match_groupings <- qread(here("output", "match_groupings.qs"), parallel::detectCores())
+# daily_nm <- qread("output/daily_nm.qs", nthreads = 8)
+# host_face_confidence_networks <- qread(here("output", "host_face_confidence_networks.qs"))
+# match_groupings_diff_city <- qread(here("output", "match_groupings_diff_city.qs"), parallel::detectCores())
+
+classified_texts <- qread(here("output", "classified_texts.qs"))
+qload(here("output", "liwc_lda_model.qsm"))
+review_text_pred <- qread(here("output","review_text_pred_liwc.qs"))
+review <- qread(here("output", "m_review.qs"))
+
+```
+# 5.2.1.1 Sampling relevant reviews and fitting the model
+
+```{r first_overview}
+
+nb_fake <- 
+classified_texts %>% 
+  filter(fake == TRUE) %>% 
+  nrow() %>% 
+  prettyNum(",")
+
+```
+
+The number of potential fake reviews we identified is `r nb_fake`. 
+
+## Info on the model
+
+```{r model_accuracy}
+# Model accuracy
+model_accuracy <- mean(predictions$class==test.data$fake) %>% scales::percent(accuracy = 0.01)
+
+```
+
+Having these two sets of reviews (fake and genuine) allowed us to fit a model, a linear discriminant analysis, based only on textual characteristics using the Linguistic Inquiry and Work Count software (LIWC). We fitted the model on 80% of our classified reviews (either fake or genuine), which is giving a discriminant function that we can apply to every other reviews. So, the rest of the classified reviews (20%) served as a test data on which we applied this discriminant function. The predictive accuracy of the model, when applied to single reviews of our test dataset, is `r model_accuracy`. FIGURE TKTK shows the result of the model on these classified reviews. Every reviews on the left of the dashed line was predicted as being a genuine review, and on the right of it, a fake review.  
+
+```{r model_plot, include=T}
+
+density_lda_test <- 
+lda.data %>% 
+  rename(Fake = fake) %>% 
+  ggplot(aes(LD1)) +
+  geom_density(aes(fill = Fake, color = Fake), alpha = 0.4)+
+  annotate("segment", x = 0, xend = 0,
+           y = -Inf, yend = Inf, alpha =1, linetype=2) +
+  annotate("segment", x = 0.2, xend = 1,
+           y = 0.61, yend = 0.6, lwd = 0.25,
+           arrow = arrow(length = unit(0.05, "inches"))) +
+  annotate("text", x = 2, y = 0.55,
+           label = "Predicted as fake")+
+  annotate("segment", x = -0.2, xend = -1,
+           y = 0.61, yend = 0.6, lwd = 0.25,
+           arrow = arrow(length = unit(0.05, "inches"))) +
+  annotate("text", x = -2, y = 0.55,
+           label = "Predicted as genuine")+
+  scale_fill_manual(values=gp_duo4)+
+  scale_color_manual(values=gp_duo4)+
+  theme_minimal()+
+  theme(legend.position = "bottom")+
+  ylab("Density")+
+  xlab("Value of the discriminant function on a review")+
+  ylim(c(0,0.61))
+
+ggsave(here("output", "figures", "density_lda_test.png"), plot = density_lda_test, width = 7, 
+       height = 3, units = "in")
+  
+density_lda_test
+
+```
+
+```{r info_model_2}
+
+
+predictions <- 
+predictions %>% 
+  as.tibble() %>% 
+  mutate(class_2 = ifelse(x > 0, T, F))
+
+conf_matrix <- 
+cbind(fake = as.logical(test.data$fake),
+      predict = as.logical(predictions$class_2)) %>%
+  as_tibble() %>%
+  dplyr::count(fake, predict) %>%
+  dplyr::group_by(fake) %>%
+  dplyr::mutate(percent = scales::percent(n/sum(n), accuracy =0.1))
+
+confusionMatrix(predictions$class, test.data$fake)
+
+# building roc curve
+test.data.roc <- predict(model, newdata = test.data)
+# Get the posteriors as a dataframe.
+test.data.roc.posteriors <- as.data.frame(test.data.roc$posterior)
+# Evaluate the model
+pred <- ROCR::prediction(test.data.roc.posteriors[,2], test.data$fake)
+roc.perf = ROCR::performance(pred, measure = "tpr", x.measure = "fpr")
+auc.train <- ROCR::performance(pred, measure = "auc")
+auc.train <- auc.train@y.values
+
+```
+
+More precisely, the sensitivity and the specificity of the model are respectively `r conf_matrix[1,4]` and `r conf_matrix[4,4]`. It means that a genuine review has a `r conf_matrix[1,4]` chance of being predicted as genuine, and a fake review has a `r conf_matrix[4,4]` chance of being predicted as fake. This can however be played with, if we would want, for example, sensitivity to be higher (better accuracy on genuine reviews being predicted as genuine). However, it would be at the expense of specificity. Figure TKTK shows the receiver operating characteristic (ROC) curve of the model. True positive rate, on y axis, is the sensitivity. We could adapt the model to have a higher rate of fake reviews being predicted as fake, but it would be at the expense of genuine reviews being also more predicted as fake, or vice versa. The area under the curve (AUC) is an effective way to summarize the overall diagnostic accuracy of a model, between 0 and 1. The straight diagonal line would represent a model with a 0.5 AUC, suggesting that the model would have no discriminatory ability. For this particular model, the AUC is `r round(unlist(auc.train), digits = 2)`, which is considered acceptable. 
+
+```{r roc_curve, include = T, fig.fullwidth=TRUE}
+
+# Save plot to an object using a null PDF device
+pdf(NULL)
+dev.control(displaylist="enable")
+plot(roc.perf, xlab = "False positive rate (1 - specificity)", ylab = "True positive rate (sensitivity)")
+abline(a=0, b= 1)
+text(x = .25, y = .7 ,paste("AUC = ", round(auc.train[[1]],3), sep = ""))
+roc_curve_plot <- recordPlot()
+invisible(dev.off())
+
+# Save
+png(here("output","figures","roc_curve.png"), width = 600, height = 400)
+roc_curve_plot
+dev.off()
+
+# Display the saved plot
+grid::grid.newpage()
+roc_curve_plot
+
+
+```
+
+```{r most_relevant_variables}
+
+greatest_categories <- 
+model$scaling %>%
+  as_tibble() %>%
+  mutate(value = (model$scaling %>% rownames()),
+         p_n_impact = ifelse(LD1>0, "positive", "negative"),
+         LD1 = abs(LD1)) %>% 
+  arrange(-LD1)
+
+
+```
+
+The LIWC software generates, with a pre-defined dictionary, indicators by calculating the percentage of words, within the text provided, that match a psychologically meaningful category. The model gives a coefficients of linear discriminants to each of the categories. The most impactful categories on the model, the largest coefficients in their absolute value, is the use of the third person pronouns (she, he, they), the use of words related to time (end, until, season) and the use of the first person singular (I). The next ones are related to biological processes such as ingestion (dish, eat, pizza) or body (cheek, hands, spit). The perceptual processes of hearing (listen, hearing) is also an important coefficient.
+
+## Results
+
+With the assumption that a user letting a fake review will let more than one fake review, we gave scores to reviewers regarding their performance at the latest model. It also reduces the range of errors compared to analyzing each review individually. Some users were flagged to have a fraudulent tendency regarding their reviews, and this was used to give a score to listings. 
+
+```{r overview of results}
+
+per_user <- 
+review_text_pred %>% 
+  group_by(user_ID) %>% 
+  summarize(mean_fake = mean(chance_fake, na.rm=T), nb_reviews = n())
+
+```
