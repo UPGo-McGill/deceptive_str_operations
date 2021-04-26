@@ -1,0 +1,3 @@
+Network;Frequently rented properties (FREH);Number of properties;Number of hosts;FREH / properties;Properties / host
+FALSE;32488;137,863;111,174;23.6%;1.24
+TRUE;24272;84,273;5,440;28.8%;15.49

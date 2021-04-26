@@ -278,11 +278,41 @@ property %>%
 
 write.table(summary_table, file = here("output", "figures", "summary_table.txt"), sep = ";", quote = FALSE, row.names = F)
 
-"AQUÍ HAY THE TABLE"
+summary_table
 
 ``` 
 
 TABLE TKTK goes deeper into the number of roperties and networks in each city. The city with the highest number of STR properties in North America is New York. It's also where there are the most networks (or hosts) active, making it the city with the lowest proportion of properties per networks. Moreover, still speaking of New York, even though it seems like the least commercial city in our table due to the low number of properties per network, it is the city, of all the more common markets (putting Kissimmee and Davenport aside), where the largest local network has the most properties, at `r summary_table[1,6]` properties. Los Angeles and Montreal comes after, with almost half of New York's number. 
+
+```{r FREH_networks, include = T}
+
+host_networks <- qread(here("output", "host_networks.qs"))
+
+networks_ID <- 
+host_networks %>% 
+  filter(nb_old_host>0) %>% 
+  pull(host_ID)
+
+network_table <- 
+  property %>% 
+  mutate(Network = ifelse(host_ID %in% networks_ID, TRUE, FALSE)) %>% 
+  group_by(Network) %>% 
+  summarize(`Frequently rented properties (FREH)` = sum(FREH),
+            `Number of properties` = n(),
+            `Number of hosts` = unique(host_ID)) %>% 
+  group_by(Network, `Frequently rented properties (FREH)`, `Number of properties`) %>% 
+  summarize(`Number of hosts` = n()) %>% 
+  mutate(`FREH / properties` = scales::percent(`Frequently rented properties (FREH)` / `Number of properties`, accuracy = 0.1),
+         `Properties / host` = round(`Number of properties` / `Number of hosts`, digit = 2)) %>% 
+  mutate(across(where(is.numeric), prettyNum, ","))
+
+write.table(network_table, file = here("output", "figures", "network_table.txt"), sep = ";", quote = FALSE, row.names = F)
+
+network_table
+
+```
+
+Networks of hosts will, almost by definition, be multilisters, meaning they will operate more than one listing at the same time. It means they are commercial hosts since they cannot operate all these listings out of their principal residence. Indeed, a network of host will have, on average, `r network_table[2,6]` properties listed on Airbnb, while a singular host will have only `r network_table[1,6]`. In addition to the multilisting variable which lets us learn if a host is a commercial operator, we also look at if a listing is frequently rented on the STR market (available or reserved 180 days, and reserved 90 days in a year), actively removing a housing unit from the long-term rental market. Indeed, a property operated by a network of hosts will be 5.2% more likely to be frequently rented. 
 
 ```{r network_analysis}
 

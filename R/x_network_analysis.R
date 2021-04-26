@@ -2,72 +2,74 @@ source("R/01_source.R")
 
 # Load data ---------------------------------------------------------------
 
-load("output/review_processed.Rdata")
+review <- qread("output/net_review.qs")
 
-
+property  <- qread("output/property.qs")
 # https://www.jessesadler.com/post/network-analysis-with-r/
 # https://kateto.net/network-visualization
 
-# # Creation of the network density df --------------------------------------
-# 
+# Creation of the network density df --------------------------------------
+
 # My nodes are every property_ID.
-# nodes <-
-#   review %>%
-#   distinct(property_ID)
-# 
-# # list every property a user has been to
-# user_properties <-
-# review %>%
-#   arrange(date) %>%
-#   group_by(user_ID) %>%
-#   filter(n() > 1) %>%
-#   # distinct so that there's no duplicate edges for one user_ID
-#   distinct(property_ID, .keep_all=T) %>%
-#   summarize(list = list(property_ID))
-# 
-# edges <- 
-#   user_properties %>% 
-#   mutate(pairs = map2(list, list, expand.grid, stringsAsFactors = FALSE)) %>% 
-#   select(-list) %>% 
-#   unnest(pairs) %>% 
-#   mutate(pairs = map2(Var1, Var2, c)) %>% 
-#   select(-Var1, -Var2) %>% 
-#   mutate(pairs = map(pairs, sort)) %>% 
-#   rowwise() %>% 
-#   filter(pairs[1] != pairs[2]) %>% 
-#   ungroup() %>% 
-#   distinct() %>% 
-#   mutate(V1 = map_chr(pairs, `[`, 1),
-#          V2 = map_chr(pairs, `[`, 2)) %>% 
-#   count(V1, V2, name = "weight", sort = TRUE)
-# 
-# 
-# qsavem(edges, nodes, file = "output/edges_nodes.qsm")
+nodes <-
+  review %>%
+  distinct(property_ID)
+
+# list every property a user has been to
+user_properties <-
+review %>%
+  arrange(date) %>%
+  group_by(user_ID) %>%
+  filter(n() > 1) %>%
+  # distinct so that there's no duplicate edges for one user_ID
+  distinct(property_ID, .keep_all=T) %>%
+  summarize(list = list(property_ID))
+
+edges <-
+  user_properties %>%
+  mutate(pairs = map2(list, list, expand.grid, stringsAsFactors = FALSE)) %>%
+  select(-list) %>%
+  unnest(pairs) %>%
+  mutate(pairs = map2(Var1, Var2, c)) %>%
+  select(-Var1, -Var2) %>%
+  mutate(pairs = map(pairs, sort)) %>%
+  rowwise() %>%
+  filter(pairs[1] != pairs[2]) %>%
+  ungroup() %>%
+  distinct() %>%
+  mutate(V1 = map_chr(pairs, `[`, 1),
+         V2 = map_chr(pairs, `[`, 2)) %>%
+  count(V1, V2, name = "weight", sort = TRUE)
+
+
+qsavem(edges, nodes, file = "output/edges_nodes.qsm")
 
 # Plotting it, analysis ---------------------------------------------------
 
 qload("output/edges_nodes.qsm")
 
-edges <- edges %>% filter(weight>2)
+edges <- edges %>% filter(weight>4)
 nodes <- nodes %>% 
-  filter(property_ID %in% edges$V1 |
-           property_ID %in% edges$V2)
+  filter(property_ID %in% c(edges$V1, edges$V2))
 
 # Tidygraph ---------------------------------------------------------------
 
 library(tidygraph)
+library(ggraph)
 
 graph <- tbl_graph(nodes = nodes, edges = edges, directed=F, node_key = "property_ID")
 
-to_components(graph, type = "strong") %>% 
+# to_components(graph, type = "strong")
 
 graph %>% 
   morph(to_components) %>% 
   activate(edges) %>% 
   data.frame()
 
+library(graphlayouts)
+
 graph %>%
-  ggraph() +
+  ggraph(layout = "nicely") +
   geom_edge_diagonal(color = "grey50", alpha = 0.5) +
   geom_node_point(aes()) +
   scale_color_identity() +
@@ -148,12 +150,12 @@ cor(nodes_improved$degree, nodes_improved$strength)
 # the next plot can be interesting if we filter in only, at minimum, edges with
 # weights of 3
 
-count_max_cliques(igraph_graph, min = 3)
+count_max_cliques(igraph_graph, min = 10)
 
 simplified_igraph <- igraph::simplify(igraph_graph)
 communities <- cluster_louvain(simplified_igraph)
 # identify which communities have fewer than x members
-small <- which(table(communities$membership) < 5)
+small <- which(table(communities$membership) < 11)
 # Which nodes should be kept?
 keep <- V(simplified_igraph)[!(communities$membership %in% small)]
 # Get subgraph & plot
@@ -167,7 +169,7 @@ plot(communities2, simplified_igraph2, vertex.label = NA, vertex.size=5,
 library(visNetwork)
 
 nodesd3 <- 
-  nodesd3 %>% 
+  nodes %>% 
   rowid_to_column("id") %>% 
   mutate(id = id-1) # because it needs to start by 0 for next steps
 
@@ -277,9 +279,25 @@ review_user %>%
 heighest_eigen <- 
 nodes_improved %>% 
   arrange(-eigenvector_centrality) %>% 
-  slice(1:10) %>% 
+  slice(1:36) %>% 
   pull(property_ID)
 
 property %>% 
-  st_drop_geometry() %>% 
-  filter(property_ID %in% heighest_eigen)
+  filter(property_ID %in% heighest_eigen) %>% 
+  count(city)
+
+review_text <- qread("output/net_review_text.qs")
+review_text_pred <- qread(here("output","review_text_pred_liwc.qs"))
+
+review_text %>% 
+  filter(property_ID %in% (property %>% 
+                             filter(property_ID %in% heighest_eigen) %>% 
+                             pull(property_ID))) %>% 
+  pull(review_ID)
+
+review_text_pred %>% 
+  filter(review_ID %in%(review_text %>% 
+                          filter(property_ID %in% (property %>% 
+                                                     filter(property_ID %in% heighest_eigen) %>% 
+                                                     pull(property_ID))) %>% 
+                          pull(review_ID))) %>% View

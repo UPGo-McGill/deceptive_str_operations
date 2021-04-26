@@ -268,16 +268,11 @@ property %>%
 
 host_networks <- 
   property %>% 
-  distinct(host_ID) %>% 
-  left_join(property %>% 
-              filter(!is.na(old_host)) %>% 
-              group_by(host_ID) %>% 
-              summarize(all_host_IDs = list(unique(old_host)))) %>% 
-  mutate(all_host_IDs = ifelse(all_host_IDs == "NULL", host_ID, all_host_IDs)) %>% 
+  group_by(host_ID) %>% 
+  summarize(all_host_IDs = list(unique(old_host))) %>% 
   rowwise() %>% 
-  mutate(nb_host_IDs = length(all_host_IDs)) %>% 
+  mutate(nb_old_host = sum(!is.na(all_host_IDs))) %>% 
   ungroup()
-
 
   
 # Commercial listing column added to property -----------------------------
