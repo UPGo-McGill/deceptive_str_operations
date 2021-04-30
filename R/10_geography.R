@@ -12,19 +12,20 @@ property %>%
   mutate(geometry_center = st_centroid(geometry))
 
 country_shp <- rnaturalearth::ne_countries(scale = "medium", returnclass = "sf") %>% 
-  filter(admin %in% c("Canada", "United States of America", "Mexico")) %>% 
+  filter(admin %in% c("Canada", "United States of America"#, "Mexico"
+                      )) %>% 
   st_transform(crs = st_crs(cities_shp))
 
 
 # Map ---------------------------------------------------------------------
 
 # For an addition to the bbox, deciding how zoomed out the map will be
-around <- 5
+around <- 10
 
 north_america_10_str <-
 ggplot(data = country_shp) +
   geom_sf(color = "grey80", fill = "grey95")+
-  geom_sf(data = cities_shp, aes(size = `Market size`, fill = `Market size`, 
+  geom_sf(data = cities_shp, aes(size = `Market size (listings)`, fill = `Market size (listings)`, 
                                  geometry = geometry_center), 
           shape = 21, color = "transparent")+
   scale_size_continuous(range = c(1,8), breaks=scales::breaks_extended(4)) +
@@ -51,9 +52,36 @@ cities_shp %>%
   pull(city) %>% 
   paste(collapse = ", ")
 
+
+
+
+# Methodology info --------------------------------------------------------
+
+# number of listings
+property %>% 
+  unnest(all_PIDs, keep_empty=T) %>% 
+  nrow()
+
+# listings per city
+property %>% 
+  unnest(all_PIDs, keep_empty=T) %>% 
+  count(city, sort=T)
+
+# data points
+daily <- qread("output/daily.qs")
+
+daily %>% 
+  nrow() %>% 
+  prettyNum(",")
+
 # Save geometries and graph -----------------------------------------------
 
 ggsave("output/figures/01_north_america_10_str.png", plot = north_america_10_str, width = 8, 
        height = 5, units = "in")
 
 qsavem(cities_shp, country_shp, file = "output/geometries.qsm")
+
+
+
+
+

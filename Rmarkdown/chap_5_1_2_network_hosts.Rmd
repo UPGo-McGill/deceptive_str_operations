@@ -319,11 +319,8 @@ Networks of hosts will, almost by definition, be multilisters, meaning they will
 networks_location <- 
   property %>% 
   group_by(host_ID) %>% 
-  distinct(old_host, .keep_all=T) %>% 
-  summarize(hosts_in_network = n(),
-            cities = list(unique(city)),
-            nb_cities = map_int(cities, length)) %>% 
-  arrange(-hosts_in_network)
+  summarize(cities = list(unique(city)),
+            nb_cities = map_int(cities, length))
 
 nb_networks_more_one_city <- 
   networks_location %>% 
@@ -380,7 +377,7 @@ ggsave(here("output", "figures", "networks_hosts_ggraph.png"), plot = networks_h
 
 ```
 
-Are networks of hosts operating multiple listings in different cities of North America? When looking at the 10 biggest STR market in this geography, we found `r nb_networks_more_one_city` networks of hosts operating in more than one of these 10 cities. The preferred locations for networks who are present in multiple cities are `r cities_net_more_1_city[1,1]`, with `r cities_net_more_1_city[1,2]` networks of hosts, and `r cities_net_more_1_city[2,1]`, with `r cities_net_more_1_city[2,2]`. FIGURE TKTK shows the density of connection between the 10 markets. The thicker the line, the more networks operating in both cities there is. It is again Davenport and Kissimmee that share the highest number of networks operating in both cities, at `r edges$weight[1]` networks of hosts. However, a very similar density exists between Los Angeles and New York (`r edges$weight[2]`), and Los Angeles and San Diego (`r edges$weight[3]`). Montreal and Toronto, the two Canadian cities, share `r edges$weight[4]` networks of hosts. Overall, on the figure, we still see that there is a lot of connections (the sum of the weights is `r sum(edges$weight)`). 
+Are networks of hosts operating multiple listings in different cities of North America? When looking at the 10 biggest STR market in this geography, we found `r nb_networks_more_one_city` networks of hosts operating in more than one of these 10 cities. The preferred locations for networks who are present in multiple cities are `r cities_net_more_1_city[1,1]`, with `r cities_net_more_1_city[1,2]` networks of hosts, and `r cities_net_more_1_city[2,1]`, with `r cities_net_more_1_city[2,2]`. FIGURE TKTK shows the density of connection between the 10 markets. The thicker the line, the more networks operating in both cities there is. It is again Davenport and Kissimmee that share the highest number of networks operating in both cities, at `r edges$weight[1]` networks of hosts. However, a similar density exists between Los Angeles and New York (`r edges$weight[2]`). Montreal and Toronto, the two Canadian cities, share `r edges$weight[3]` networks of hosts. Overall, on the figure, we still see that there is a lot of connections (the sum of the weights is `r sum(edges$weight)`). 
 
 ```{r network_graph, include=T}
 networks_hosts_ggraph

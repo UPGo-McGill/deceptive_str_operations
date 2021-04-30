@@ -29,7 +29,7 @@ review_user <-
 
 
 # Change the property_ID to the new one after image matching --------------
-property <- qread(here("output", "property.qs"), parallel::detectCores())
+property <- qread("output/property.qs", parallel::detectCores())
 
 property_unnested <- 
   property %>% 
@@ -43,6 +43,36 @@ review <-
   left_join(property_unnested, by = c("property_ID" = "old_ID")) %>% 
   mutate(property_ID = coalesce(new_ID, property_ID)) %>% 
   select(-new_ID)
+
+review_text <- 
+  review_text %>% 
+  left_join(property_unnested, by = c("property_ID" = "old_ID")) %>% 
+  mutate(property_ID = coalesce(new_ID, property_ID)) %>% 
+  select(-new_ID)
+
+property_old_hosts <-
+  property %>%
+  select(host_ID, old_host) %>%
+  filter(!is.na(old_host)) %>%
+  mutate(across(everything(), as.numeric))
+
+review_text <- 
+  review_text %>% 
+  left_join(property_old_hosts, by = c("user_ID" = "old_host")) %>%
+  mutate(user_ID = coalesce(host_ID, user_ID)) %>% 
+  select(-host_ID)
+
+review <- 
+  review %>% 
+  left_join(property_old_hosts, by = c("user_ID" = "old_host")) %>%
+  mutate(user_ID = coalesce(host_ID, user_ID)) %>% 
+  select(-host_ID)
+
+review_user <- 
+  review_user %>% 
+  left_join(property_old_hosts, by = c("user_ID" = "old_host")) %>%
+  mutate(user_ID = coalesce(host_ID, user_ID)) %>% 
+  select(-host_ID)
 
 # Save every reviews in English -------------------------------------------
 

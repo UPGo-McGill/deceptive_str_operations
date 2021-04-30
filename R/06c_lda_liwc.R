@@ -9,12 +9,6 @@ library(caret)
 classified_texts_import <- qread("output/classified_texts.qs")
 liwc2015_results <- qread("output/liwc2015_results.qs")
 
-# Keep only one review of those that are not unique, so that they don't take
-# too much space in the model
-classified_texts_import <- 
-classified_texts_import %>% 
-  distinct(review, .keep_all=T)
-
 classified_texts <- 
   rbind(classified_texts_import[classified_texts_import$fake == T,],
         sample_n(classified_texts_import[classified_texts_import$fake == F,], 
@@ -57,9 +51,9 @@ ggplot(lda.data, aes(LD1)) +
   geom_density(aes(fill = fake), alpha = 0.4)+
   scale_fill_manual(values=c("#FFFF00", "#00FFFF"))
 
-predictions <- 
-predictions %>% 
-  as.tibble() %>% 
+predictions <-
+predictions %>%
+  as.tibble() %>%
   mutate(class_2 = ifelse(x > 0, T, F))
 
 cbind(fake = as.logical(test.data$fake),
@@ -92,9 +86,8 @@ model$scaling %>%
          LD1 = abs(LD1)) %>% 
   arrange(LD1) %>% as.data.frame()
 
-# qsavem(training.samples, train.data, test.data, model, 
+# qsavem(training.samples, train.data, test.data, model,
 #        predictions, lda.data, file = "output/liwc_lda_model.qsm")
-
 
 # Apply to entire population of reviews -----------------------------------
 
@@ -105,6 +98,9 @@ liwc_results_test_data <-
   liwc2015_results %>% 
   # filter(review_ID %in% review_text$review_ID) %>%
   select(-review_ID)
+
+rm(liwc2015_results)
+
 
 # predict
 predictions <- model %>% predict(liwc_results_test_data)

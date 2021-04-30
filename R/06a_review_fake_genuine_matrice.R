@@ -174,21 +174,6 @@ classified_texts <-
   mutate(fake = as.factor(fake)) %>% 
   distinct(review, .keep_all=T) # duplicated reviews are worth more if we let them in the training dataset
 
-# Visualize the two classes
-classified_texts %>% 
-  mutate(text_length = nchar(review)) %>% 
-  ggplot()+
-  geom_density(aes(text_length, fill = fake), alpha = 0.5)+
-  xlim(c(1,1000))
-# fake reviews are usually smaller in character length
-
-# Commercial, FREH_3, FREH, ?
-classified_texts %>% 
-  left_join(select(review, review_ID, property_ID)) %>% 
-  left_join(select(property, property_ID, FREH)) %>% 
-  group_by(fake) %>% 
-  count(FREH) %>% 
-  mutate(perc = n/sum(n))
 
 # Save --------------------------------------------------------------------
 

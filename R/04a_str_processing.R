@@ -305,6 +305,17 @@ property <-
                                             pull(property_ID)), T, F))
 
 
+# Listings sharing photo, active at same time -----------------------------
+
+same_photo_active_same_times <- 
+  future_map(groupings[1:5], ~{daily %>% 
+      filter(property_ID %in% .x) %>% 
+      group_by(date) %>% 
+      filter(n() > 1) %>% 
+      group_by(property_ID) %>% 
+      summarize(nb_same_date = n())})
+
+
 # Save data ---------------------------------------------------------------
 
 qsave(property, file = "output/property.qs",
