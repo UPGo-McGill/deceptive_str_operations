@@ -43,7 +43,11 @@ nb_properties <-
   tibble(before = (nrow(property_nm) %>% prettyNum(",")), 
          after = (nrow(property) %>% prettyNum(",")),
          diff = ((nrow(property_nm)-nrow(property)) %>% prettyNum(",")), 
-         variation = (nrow(property)-nrow(property_nm))/nrow(property_nm))
+         variation = (nrow(property)-nrow(property_nm))/nrow(property_nm),
+         to_x_listings = (nrow(property %>% filter(all_PIDs != "NULL")) %>% prettyNum(",")))
+
+property %>% 
+  filter
 
 property_matched <- 
   property %>% 
@@ -162,7 +166,7 @@ multiple_photos(pic_shared_outside_kd_images)
 
 ```
 
-We proceeded to nest listings together if a listing was deleted prior to another listing’s creation using the same photo. We suspect that more listings were taking down and brought back up using this technique but weren’t recycling the exact same first photo. Therefore, we consider the number of listings we matched to be a lower bound for the number of unique housing units that were listed using this technique. Once the listings were nested, our dataset shrank down to `r nb_properties$after`, a diminution of `r nb_properties$diff` properties. The high number of matches only allowed this number of listings to be nested, proving that there are a very large number of listings active at the same moment in time, using the same listing photo. As stated above, this can lead to the bait-and-switch technique. To take this type of deception into account, we calculated the number of times each listing used the same photo as one or more other listings. A high number shows higher deception.
+We proceeded to nest listings together if a listing was deleted prior to another listing’s creation using the same photo. We suspect that more listings were taking down and brought back up using this technique but weren’t recycling the exact same first photo. Therefore, we consider the number of listings we matched to be a lower bound for the number of unique housing units that were listed using this technique. Once the listings were merged, our dataset shrank down to `r nb_properties$after`, a diminution of `r nb_properties$diff` listings. These listings  were merged to `r nb_properties$to_x_listings` listings still active (some listings were merged to 3 or 4 other listings). The high number of matches only allowed this number of listings to be nested, proving that there are a very large number of listings active at the same moment in time, using the same listing photo. As stated above, this can lead to the bait-and-switch technique. To take this type of deception into account, we calculated the number of times each listing used the same photo as one or more other listings. A high number shows higher deception.
 
 ```{r matches_per_listings_prep}
 

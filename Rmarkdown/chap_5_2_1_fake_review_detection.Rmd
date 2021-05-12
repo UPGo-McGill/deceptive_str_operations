@@ -90,7 +90,7 @@ lda.data %>%
   ylim(c(0,0.61))
 
 ggsave(here("output", "figures", "density_lda_test.png"), plot = density_lda_test, width = 7, 
-       height = 3, units = "in")
+       height = 5, units = "in")
   
 density_lda_test
 
@@ -164,13 +164,13 @@ model$scaling %>%
 
 ```
 
-The LIWC software generates, with a pre-defined dictionary, indicators by calculating the percentage of words, within the text provided, that match a psychologically meaningful category. The model gives a coefficients of linear discriminants to each of the categories. The most impactful categories on the model, the largest coefficients in their absolute value, is the use of the third person pronouns (she, he, they), the use of words related to time (end, until, season) and the use of the first person singular (I). The next ones are related to biological processes such as ingestion (dish, eat, pizza) or body (cheek, hands, spit). The perceptual processes of hearing (listen, hearing) is also an important coefficient.
+Using a pre-defined dictionary, indicators by calculating the percentage of words in a text that match a psychologically meaningful category. The model gives a coefficient of linear discriminants for each of the categories. The most impactful categories on the model (the largest coefficients in their absolute value) is the use of words related to time, the use of perceptual psychological processes (such as TKTK), and the use of the first person singular. 
 
 ## Results
 
 With the assumption that a user letting a fake review will let more than one fake review, we gave scores to reviewers regarding their performance at the latest model. It also reduces the range of errors compared to analyzing each review individually. Some users were flagged to have a fraudulent tendency regarding their reviews, and this was used to give a score to listings. 
 
-```{r overview of results}
+```{r overview_of_results}
 
 per_user <- 
 review_text_pred %>% 
@@ -212,18 +212,33 @@ property_fake_reviewed %>%
   count(city) %>% 
   arrange(-n)
 
-fake_reviewed_property_plot <- 
+p1 <- 
 fake_reviewed_city %>% 
   ggplot()+
   geom_col(aes(city, n), fill = color_palette[3])+
-  geom_text(aes(x = city, y = n, label=n), vjust=c(rep(2,9), -0.5))+
+  geom_text(aes(x = city, y = n, label=n), vjust=c(rep(2,8), -0.5, -0.5))+
   theme_minimal()+
   xlab(NULL)+
   ylab("Number of properties")+
   theme(legend.position = "none")
 
+p2 <- 
+  property %>% 
+  count(city, name = "nb_listings") %>% 
+  left_join(fake_reviewed_city) %>% 
+  mutate(per = n/nb_listings) %>% 
+  ggplot()+
+  geom_col(aes(city, per), fill = color_palette[5])+
+  geom_text(aes(x = city, y = per, label=scales::percent(per, accuracy = 0.1)), vjust=c(rep(2,2), -0.5, -0.5, rep(2,6)))+
+  theme_minimal()+
+  xlab(NULL)+
+  ylab("Number of properties")+
+  theme(legend.position = "none")
+
+fake_reviewed_property_plot <- cowplot::plot_grid(p1, p2, ncol = 1, align = "v")
+
 ggsave(here("output", "figures", "fake_reviewed_property_plot.png"), plot = fake_reviewed_property_plot, width = 7.5, 
-       height = 3, units = "in")
+       height = 4, units = "in")
 
 fake_reviewed_property_plot
 

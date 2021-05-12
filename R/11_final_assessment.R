@@ -4,7 +4,7 @@ property <- qread("output/property.qs")
 host_networks <- qread("output/host_networks.qs")
 review_text_pred_liwc <- qread("output/review_text_pred_liwc.qs")
 host_face_confidence <- qread("output/host_face_confidence_networks.qs")
-name_mention <- qread("output/name_mention.qs")
+name_mention <- qread("output/name_mention_host.qs")
 review <- qread("output/m_review.qs")
 
 
@@ -81,10 +81,26 @@ all_together %>%
 
 all_together %>% 
   filter(commercial) %>% 
-  filter(listing_recycling_score > 0) %>% 
+  filter(listing_recycling_score > 0 |
+           host_recycling_score > 0 |
+           fake_review_score > 0 |
+           face_confidence < 0.5 |
+           name_mention_score < 0.5) %>% 
   nrow() / 
   all_together %>% 
   filter(commercial) %>% 
+  nrow()
+
+all_together %>% 
+  filter(!commercial) %>% 
+  filter(listing_recycling_score > 0 |
+           host_recycling_score > 0 |
+           fake_review_score > 0 |
+           face_confidence < 0.5 |
+           name_mention_score < 0.5) %>% 
+  nrow() / 
+  all_together %>% 
+  filter(!commercial) %>% 
   nrow()
 
 

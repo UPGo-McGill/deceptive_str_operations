@@ -53,25 +53,36 @@ review_text %>%
 # Analysis ----------------------------------------------------------------
 
 
-name_mention <- 
+name_mention_host <-
 review_text_host_name %>%
   # only look at host names we know
-  filter(!is.na(host_name)) %>% 
-  # mutate(host_name = str_remove_all(host_name, "\\(|\\)")) %>% 
+  filter(!is.na(host_name)) %>%
+  # mutate(host_name = str_remove_all(host_name, "\\(|\\)")) %>%
   mutate(name_mention = ifelse(str_detect(review, pattern = str_glue("{host_name}")), T, F)) %>%
   group_by(initial_host_ID) %>%
   summarize(name_mention = sum(name_mention , na.rm=T), nb_reviews = n())
 
 name_mention <- 
-  name_mention %>% 
-  left_join(select(property, host_ID, old_host), by = c("initial_host_ID" = "old_host")) %>% 
+  review_text_host_name %>%
+  # only look at host names we know
+  filter(!is.na(host_name)) %>% 
+  # mutate(host_name = str_remove_all(host_name, "\\(|\\)")) %>% 
+  mutate(name_mention = ifelse(str_detect(review, pattern = str_glue("{host_name}")), T, F)) %>%
+  group_by(property_ID) %>%
+  summarize(name_mention = sum(name_mention , na.rm=T), nb_reviews = n())
+
+
+name_mention_host <-
+  name_mention_host %>%
+  left_join(select(property, host_ID, old_host), by = c("initial_host_ID" = "old_host")) %>%
   mutate(new_host_ID = coalesce(host_ID, initial_host_ID)) %>%
-  select(new_host_ID, name_mention, nb_reviews) %>% 
-  rename(host_ID = new_host_ID) %>% 
-  group_by(host_ID) %>% 
+  select(new_host_ID, name_mention, nb_reviews) %>%
+  rename(host_ID = new_host_ID) %>%
+  group_by(host_ID) %>%
   summarize(name_mention = sum(name_mention), nb_reviews = sum(nb_reviews))
 
 
 # Save --------------------------------------------------------------------
 
 qsave(name_mention, file = "output/name_mention.qs")
+qsave(name_mention_host, file = "output/name_mention_host.qs")

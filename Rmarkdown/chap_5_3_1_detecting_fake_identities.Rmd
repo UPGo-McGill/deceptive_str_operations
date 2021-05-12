@@ -70,7 +70,7 @@ no_face_avg <-
          index = factor(index, levels = c("TRUE", "FALSE"))) %>% 
   ggplot()+
   geom_bar(aes(x = index, y = avg, fill = index), stat="identity", 
-           fill = c(gp_duo4, gp_duo4))+
+           fill = c(gp_duo3, gp_duo3))+
   facet_wrap("domain")+
   scale_y_continuous(labels = scales::percent)+
   geom_text(aes(x = index, y = avg, label=per), vjust=2)+
@@ -79,8 +79,8 @@ no_face_avg <-
   ylab("Face detection average")+
   theme(legend.position = "none")
 
-ggsave(here("output", "figures", "no_face_avg.png"), plot = no_face_avg, width = 7, 
-       height = 4, units = "in")
+ggsave(here("output", "figures", "no_face_avg.png"), plot = no_face_avg, width = 6, 
+       height = 2, units = "in")
 
 ```
 
@@ -164,23 +164,23 @@ host_face_commercial_plot_1 <-
         axis.text.x = element_text(angle=45),
         legend.position = "none",
         legend.title = element_blank())+
-  ylab("Percentage of listings in the group")+
+  ylab(NULL)+
   xlab("% of face detection")
 
-host_face_commercial_plot_2 <-
-host_face_commercial %>% 
-  filter(facet_bounds == "lower_bound") %>% 
-  ggplot()+
-  geom_col(aes(bounds, perc_commercial, fill = commercial), position = "dodge")+
-  scale_fill_manual(values = gp_duo1)+
-  scale_y_continuous(labels = scales::percent_format(accuracy = 0.1))+
-  theme_minimal()+
-  theme(strip.text.x = element_blank(),
-        axis.text.x = element_text(angle=45),
-        legend.position = "none",
-        legend.title = element_blank())+
-  ylab("Percentage of listings in the group")+
-  xlab(NULL)
+# host_face_commercial_plot_2 <-
+# host_face_commercial %>% 
+#   filter(facet_bounds == "lower_bound") %>% 
+#   ggplot()+
+#   geom_col(aes(bounds, perc_commercial, fill = commercial), position = "dodge")+
+#   scale_fill_manual(values = gp_duo1)+
+#   scale_y_continuous(labels = scales::percent_format(accuracy = 0.1))+
+#   theme_minimal()+
+#   theme(strip.text.x = element_blank(),
+#         axis.text.x = element_text(angle=45),
+#         legend.position = "none",
+#         legend.title = element_blank())+
+#   ylab("Percentage of listings in the group")+
+#   xlab(NULL)
 
 host_face_commercial_plot_3 <-
 host_face_commercial %>% 
@@ -194,34 +194,47 @@ host_face_commercial %>%
         axis.text.x = element_text(angle=45),
         legend.position = "bottom",
         legend.title = element_blank())+
+  # ylab(NULL)+
   ylab(NULL)+
   xlab("% of face detection")
 
-host_face_commercial_plot_4 <-
-host_face_commercial %>% 
-  filter(facet_bounds == "upper_bound") %>% 
-  ggplot()+
-  geom_col(aes(bounds, perc_commercial, fill = commercial), position = "dodge")+
-  scale_fill_manual(values = gp_duo1)+
-  scale_y_continuous(labels = scales::percent_format(accuracy = 0.1))+
-  theme_minimal()+
-  theme(strip.text.x = element_blank(),
-        axis.text.x = element_text(angle=45),
-        legend.position = "none")+
-  ylab(NULL)+
-  xlab(NULL)
+# host_face_commercial_plot_4 <-
+# host_face_commercial %>% 
+#   filter(facet_bounds == "upper_bound") %>% 
+#   ggplot()+
+#   geom_col(aes(bounds, perc_commercial, fill = commercial), position = "dodge")+
+#   scale_fill_manual(values = gp_duo1)+
+#   scale_y_continuous(labels = scales::percent_format(accuracy = 0.1))+
+#   theme_minimal()+
+#   theme(strip.text.x = element_blank(),
+#         axis.text.x = element_text(angle=45),
+#         legend.position = "none")+
+#   ylab(NULL)+
+#   xlab(NULL)
 
-empty_space_plot <- ggplot() + theme_void()
+# empty_space_plot <- ggplot() + theme_void()
 
 library(patchwork)
-host_face_commercial_plot <- host_face_commercial_plot_1 /
-((host_face_commercial_plot_2 |empty_space_plot| 
-    host_face_commercial_plot_3 |empty_space_plot| 
-    host_face_commercial_plot_4) +
-   plot_layout(widths = c(2,1,20,1,2)))
+# host_face_commercial_plot <- host_face_commercial_plot_1 /
+# ((host_face_commercial_plot_2 |empty_space_plot| 
+#     host_face_commercial_plot_3 |empty_space_plot| 
+#     host_face_commercial_plot_4) +
+#    plot_layout(widths = c(2,1,20,1,2)))
+
+y_lab <- "% of listings in the group"
+
+p_lab <- 
+  ggplot() + 
+  annotate(geom = "text", x = 1, y = 1, label = y_lab, angle = 90) +
+  coord_cartesian(clip = "off")+
+  theme_void()
+
+host_face_commercial_plot <- (p_lab | host_face_commercial_plot_1 /
+    host_face_commercial_plot_3) +
+   plot_layout(widths = c(1,20))
 
 ggsave(here("output", "figures", "host_face_commercial_plot.png"), plot = host_face_commercial_plot, width =7, 
-       height = 6.25, units = "in")
+       height = 4, units = "in")
 
 host_face_commercial_plot
 
@@ -231,23 +244,89 @@ host_face_commercial_plot
 
 THIS PARAGRAPH WE WANT TO KEEP THE ONE ON THE DOC                          On the Airbnb platform, we have seen, with prior investigative journalism articles, stock photos used as profile pictures (Conti 2019), to appear as if the host has a unique identity. In these cases, a face is detected by our software, but the fake photo that is used represents a form of deception. To overcome this error margin, we developed a second way of detecting fake identities. We listed all the reviews left to each of the individual hosts, and we detected the frequency of use of the host name in these reviews. On an aggregated level, if reviewers repeat the host’s name, it is an indication that they met the individual. If they met them, so mention them, the identity is most likely confirmed. On the other side, if many reviews are let and none mention the host's name, it is probably not a single individual behind the operation.
 
-```{r name_mention_in_reviews}
+```{r name_mention_host_in_reviews}
 
-name_mention <- qread(here("output", "name_mention.qs"))
+name_mention_host <- qread(here("output", "name_mention_host.qs"))
 
-commercial_name_mention <- 
+commercial_name_mention_host <- 
 property %>% 
   mutate(commercial = ifelse(FREH == T | multi == T, T, F)) %>%
   group_by(host_ID) %>% 
   summarize(commercial = sum(commercial)) %>% 
   mutate(commercial = ifelse(commercial > 1, T, F)) %>% 
-  inner_join(name_mention) %>% 
+  inner_join(name_mention_host) %>% 
   group_by(commercial) %>% 
   summarize(per = scales::percent(sum(name_mention)/sum(nb_reviews), accuracy = 0.1), n())
 
 ```
 
-We found that reviews let to commercial operators were less likely to contain the name of the hosts. Indeed, we separated commercial operations from non-commercial and look on an aggregated level. Commercial operators have only a fifth (`r commercial_name_mention[2,2]`) of their reviews which contain the name of the host, while for non-commercial operators, as much as half (`r commercial_name_mention[1,2]`) of the reviews includes it. 
+```{r name_mention_city, include = T}
+
+name_mention <- qread(here("output", "name_mention.qs"))
+
+commercial_host <- 
+property %>% 
+  mutate(commercial = ifelse(FREH == T | multi == T, T, F)) %>% 
+  group_by(host_ID) %>% 
+  summarize(commercial = sum(commercial)) %>% 
+  mutate(commercial = ifelse(commercial > 0, T, F))
+  
+
+commercial_name_mention <- 
+  property %>% 
+  left_join(commercial_host, by = "host_ID") %>% 
+  select(property_ID, city, commercial) %>% 
+  inner_join(name_mention) %>% 
+  group_by(city, commercial) %>% 
+  summarize(per = sum(name_mention)/sum(nb_reviews), n())
+
+commercial_name_mention_plot <- 
+commercial_name_mention %>% 
+  arrange(commercial) %>% 
+  rename(Commercial = commercial) %>% 
+  ggplot()+
+  geom_col(aes(city, per, fill = Commercial), 
+           position = position_dodge(width = 0.5), alpha = 0.8)+
+  scale_fill_manual(values = gp_duo2)+
+  scale_y_continuous(labels = scales::percent_format(accuracy = 0.1))+
+  xlab(NULL)+
+  ylab("% reviews containing the host name")+
+  theme_minimal()+
+  theme(legend.position = "bottom")
+
+ggsave(here("output", "figures", "commercial_name_mention.png"), plot = commercial_name_mention_plot, width =7.5, 
+       height = 3.5, units = "in")
+
+commercial_name_mention_plot
+
+```
+
+We found that reviews let to commercial operators were less likely to contain the name of the hosts. Indeed, we separated commercial operations from non-commercial and look on an aggregated level. Commercial operators have only a fifth (`r commercial_name_mention_host[2,2]`) of their reviews which contain the name of the host, while for non-commercial operators, as much as half (`r commercial_name_mention_host[1,2]`) of the reviews includes it. 
+
+```{r name_mention_analysis}
+
+dav_non_com_rev <- 
+commercial_name_mention %>% 
+  filter(city == "Davenport", commercial == FALSE) %>% 
+  pull(`n()`)
+
+outside_dev_non_com_rev <- 
+commercial_name_mention %>% 
+  filter(!city %in% c("Davenport", "Kissimmee"), 
+         commercial == FALSE) %>% 
+  pull(`n()`) %>% 
+  mean() %>% round() %>% 
+  prettyNum(",")
+
+kiss_com_rev <- 
+commercial_name_mention %>% 
+  filter(city == "Kissimmee", commercial == TRUE) %>% 
+  pull(per) %>% 
+  scales::percent(accuracy=0.1)
+
+```
+
+FIGURE TKTK shows that in every city except Davenport, where only `r dav_non_com_rev` reviews were left on non-commercial listings versus an average of `r outside_dev_non_com_rev` in the other cities (resulting in a very small sample size for Davenport), the reviews left on commercial listings contain significantly less of the host's name. Kissimmee is the city that brings the average down the most, where only `r kiss_com_rev` of reviews left on commercial listings contain the host's name.
 
 ## 5.3.2 Fake listings
 

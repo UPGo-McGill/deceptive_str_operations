@@ -266,8 +266,8 @@ property %>%
             ) %>% 
   arrange(-Properties) %>% 
   left_join(nb_properties_biggest_host) %>% 
-  mutate(x = `Properties operated by biggest local network`/ `Properties`) %>% 
-  select(-Listings, -`Host accounts per networks`, -`Host accounts`) %>% 
+  mutate(`% of properties operated by biggest local network` = scales::percent(`Properties operated by biggest local network`/ `Properties`, accuracy = 0.01)) %>% 
+  select(-Listings, -`Host accounts per networks`, -`Host accounts`, -`Properties operated by biggest local network`) %>% 
   rename(`City` = city) %>% 
   mutate(across(where(is.numeric), prettyNum, ","))
          #%>% 
@@ -363,16 +363,16 @@ city_colors  <- colorRampPalette(color_palette[c(3,6,1,4,2)])
 networks_hosts_ggraph <-   
   edges %>% 
     ggraph(layout = 'linear', circular = T) + 
-    geom_edge_link(aes(width = weight), color = color_palette[5], alpha = 0.5) + 
+    geom_edge_link(aes(width = weight, alpha = weight), color = color_palette[5]) + 
     theme_graph() + 
-    geom_node_text(aes(label = name), nudge_y = c(rep(0.1,3),rep(-0.1,5),rep(0.1,2)))+
+    geom_node_text(aes(label = name), nudge_y = c(rep(0.2,3),rep(-0.2,5),rep(0.2,2)))+
     geom_node_point(aes(colour = name), size = 5, color = city_colors(10))+
     theme(
       legend.position = "none",
       plot.margin=grid::unit(c(1,1,1,1), "mm"))
   
 ggsave(here("output", "figures", "networks_hosts_ggraph.png"), plot = networks_hosts_ggraph, width = 7, 
-       height = 5, units = "in")
+       height = 3, units = "in")
 
 
 ```
